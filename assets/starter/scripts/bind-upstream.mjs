@@ -1,0 +1,13 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { validateScene } from '../src/scene-data.js';
+import { sha256,checkUpstream } from './check-upstream.mjs';
+const root=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
+const intake=process.argv[2]||'./upstream-intake.json',bytes=await readFile(path.resolve(root,intake)),packet=JSON.parse(bytes.toString('utf8'));
+const scene=JSON.parse(await readFile(path.join(root,'scene.json'),'utf8'));
+scene.upstream={intake,intake_sha256:sha256(bytes),...Object.fromEntries(['project_id','formal_id','prompt_version','budget_version'].map(k=>[k,packet[k]]))};
+const errors=validateScene(scene);if(errors.length)throw new Error(errors.join('\n'));
+await checkUpstream(root,scene);
+await writeFile(path.join(root,'scene.json'),JSON.stringify(scene,null,2)+'\n','utf8');
+console.log(`Bound ${packet.formal_id}/${packet.prompt_version}/${packet.budget_version}; upstream unchanged.`);

@@ -1,0 +1,22 @@
+{
+  "name": "hyperframes-previs-project",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "prepare-libs": "node scripts/prepare-libs.mjs",
+    "validate": "node scripts/validate.mjs",
+    "bind-upstream": "node scripts/bind-upstream.mjs",
+    "studio": "node scripts/serve.mjs",
+    "lint": "hyperframes lint .",
+    "snapshot": "node scripts/snapshot.mjs",
+    "spatial-check": "node scripts/spatial-check.mjs",
+    "feedback": "node scripts/feedback-export.mjs",
+    "render": "node scripts/render.mjs",
+    "handoff": "node scripts/handoff.mjs"
+  },
+  "dependencies": {
+    "hyperframes": "0.9.10",
+    "three": "0.187.0"
+  }
+}

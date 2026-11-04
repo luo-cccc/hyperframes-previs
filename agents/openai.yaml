@@ -1,0 +1,4 @@
+interface:
+  display_name: "HyperFrames 分镜预演适配"
+  short_description: "接收有效分镜与资产，制作支持局部编辑、人工锁、画面批注和空间抽查的三维预演"
+  default_prompt: "使用 $hyperframes-previs，接收 script-to-storyboard-prompts 的指定有效正式段制作三维预演，保留镜序、时码和版本，交付可编辑项目、参考视频与实际审片反馈。"

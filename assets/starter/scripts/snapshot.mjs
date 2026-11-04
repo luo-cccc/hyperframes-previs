@@ -1,0 +1,12 @@
+import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
+const check=spawnSync(process.execPath,[path.join(root,'scripts/validate.mjs')],{cwd:root,stdio:'inherit'});if(check.status!==0)process.exit(check.status||1);
+const s=JSON.parse(await readFile(path.join(root,'scene.json'),'utf8')),frame=1/s.fps;
+const times=[0,s.duration-frame,...s.shots.flatMap(shot=>[Math.max(0,shot.start-frame),shot.start,Math.min(s.duration-frame,shot.start+frame),(shot.start+shot.end)/2])];
+const at=[...new Set(times.map(t=>Number(t.toFixed(6))))].sort((a,b)=>a-b).join(',');
+const result=spawnSync(process.execPath,[path.join(root,'node_modules/hyperframes/bin/hyperframes.mjs'),'snapshot','.', '--at',at,'--no-end','--output','review'],{cwd:root,stdio:'inherit'});
+if(result.error)throw result.error;
+process.exit(result.status??1);

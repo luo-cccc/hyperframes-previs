@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>三维分镜预演 · 干净画面</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111a22}
+    #stage{width:1280px;height:720px;position:relative;overflow:hidden}canvas{display:block;width:100%;height:100%}
+    #error{position:absolute;inset:0;padding:50px;color:#fff;background:#351d24;font:24px sans-serif;white-space:pre-wrap}
+  </style>
+  <script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/controls/OrbitControls.js":"./lib/OrbitControls.js"}}</script>
+  <script>
+    window.__timelines=window.__timelines||{};
+    window.__hf=window.__hf||{};window.__hf.buildReady=window.__hf.buildReady||{};
+    window.__hf.buildReady.previs=new Promise((resolve,reject)=>{window.__previsResolve=resolve;window.__previsReject=reject});
+    window.addEventListener('unhandledrejection',event=>{window.__previsReject(event.reason)});
+  </script>
+</head>
+<body>
+  <main id="stage" data-composition-id="corridor-previs" data-no-timeline data-start="0" data-duration="12" data-width="1280" data-height="720" data-fps="24"></main>
+  <script type="module">import('./src/previs.js').catch(error=>{const message=document.createElement('div');message.id='error';message.textContent=error.message;document.getElementById('stage').appendChild(message);window.__previsReject(error)});</script>
+</body>
+</html>

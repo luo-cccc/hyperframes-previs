@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>三维分镜预演 · 审片室</title>
+  <style>
+    :root{color-scheme:dark;font-family:'Microsoft YaHei',system-ui,sans-serif;color:#e6edf4;background:#10161e}
+    *{box-sizing:border-box}body{margin:0;padding:24px}header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:24px;letter-spacing:.03em;margin:5px 0}p{margin:6px 0;color:#94a6b7;font-size:13px;line-height:1.7}.eyebrow{font-size:11px;letter-spacing:.17em;color:#69d8ce}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr) 286px;gap:18px}.viewer{background:#080f16;border:1px solid #2d3d4c;border-radius:12px;overflow:hidden}
+    #framebox{width:100%;aspect-ratio:16/9;overflow:hidden;position:relative}iframe{position:absolute;top:0;left:0;border:0;transform-origin:0 0;width:1280px;height:720px}
+    .transport{padding:16px;border-top:1px solid #253343}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.row.between{justify-content:space-between}
+    button,select,input[type=number],input[type=text],textarea{background:#1b2835;color:#dce7f0;border:1px solid #354a5b;border-radius:6px;padding:8px;font:inherit;font-size:12px}
+    button{cursor:pointer}button:hover{border-color:#75d4cc}button.active{background:#254d50;color:#c8fff3;border-color:#69c7bf}.accent{background:#376a66;color:#e7fff8}
+    input[type=range]{width:100%;accent-color:#6fe1d2;margin:16px 0 12px}.shots{display:flex;gap:7px}.shots button{flex:1;text-align:left;line-height:1.7}
+    .panel{padding:17px;background:#17212c;border:1px solid #2b3b4b;border-radius:12px;margin-bottom:12px}.panel h2{font-size:14px;margin:0 0 13px}
+    label{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#abbcca;margin:9px 0}input[type=number]{width:80px}select{max-width:165px}
+    #status{min-height:22px;color:#8fe2c9;font-size:12px;margin-top:10px;line-height:1.6;overflow-wrap:anywhere}#beat{min-height:46px}code{font:12px Consolas,monospace;color:#a5cbd7}.panel,aside{min-width:0}
+    .legend{display:flex;gap:18px;padding:13px 0;font-size:12px;color:#a4b7c6}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+    button:disabled{opacity:.45;cursor:default}.inspection{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}textarea{width:100%;min-height:78px;resize:vertical}input[type=text]{width:100%}.capture{width:100%;max-height:200px;object-fit:contain;background:#070d13;margin:10px 0}.annotation{border-top:1px solid #344557;padding:12px 0}.annotation p{white-space:pre-wrap}.annotation img{width:150px;max-width:100%;display:block;margin:8px 0}.issues{max-height:330px;overflow:auto}.issue{display:block;width:100%;text-align:left;margin-bottom:7px;line-height:1.5}.badge{color:#88e3d2}.locked{color:#efbf7b}#selection{font-size:12px;color:#85d8ce}
+    @media(max-width:1000px){.layout{grid-template-columns:1fr}aside{display:grid;grid-template-columns:1fr 1fr;gap:12px}body{padding:14px}}
+  </style>
+</head>
+<body>
+  <header><div><div class="eyebrow">HYPERFRAMES × THREE.JS</div><h1 id="title">三维分镜预演</h1><p>先检查镜头与走位，再导出视频参考。</p></div><code id="spec"></code></header>
+  <div class="layout">
+    <section>
+      <div class="viewer"><div id="framebox"><iframe id="film" src="./index.html" title="三维预演画面"></iframe></div>
+        <div class="transport"><div class="row between"><div class="row"><button id="play" class="accent">播放</button><button id="restart">回到开头</button><code id="clock">0.00 / 12.00 s</code></div><div class="row" id="views"><button data-view="camera" class="active">正式机位</button><button data-view="free">自由观察</button><button data-view="top">俯视走位</button></div></div>
+          <input id="timeline" type="range" min="0" max="12" value="0" step="0.0416667" aria-label="整场时间轴"><div id="shots" class="shots"></div>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div><p id="beat"></p>
+      <p id="selection">点击画面选择人物或批注位置。</p>
+      <p>正式导出：<code>npm run render</code>　参考包：<code>npm run handoff</code></p>
+      <div class="inspection">
+        <div class="panel"><h2>画面批注</h2><p>选中人物或画面位置，暂停后捕获。只记录已保存的正式机位；捕获会对齐到视频帧。</p><button id="capture">捕获当前画面</button><img id="capture-preview" class="capture" alt="待批注的干净画面" hidden><p id="capture-info"></p><textarea id="annotation-text" aria-label="画面修改意见" placeholder="描述需要修改的对象、位置或时机"></textarea><div class="row"><button id="save-annotation" class="accent">保存批注</button><button id="refresh-annotations">刷新反馈</button><button id="export-feedback">导出反馈包</button></div><div id="annotation-list"></div></div>
+        <div class="panel"><h2>空间抽查</h2><p>检查已保存的代理模型。只有镜头明示要求入画的人物才检查构图；警告仍需看画面确认。</p><button id="check-spatial">按帧检查空间</button><p id="spatial-summary"></p><div id="spatial-issues" class="issues"></div></div>
+      </div>
+    </section>
+    <aside>
+      <div class="panel"><h2>调整当前镜头 <span id="shot-id"></span></h2><p>相对原机位的偏移，单位：米。</p>
+        <label>位置 X <input id="px" type="number" step="0.1" value="0"></label><label>位置 Y <input id="py" type="number" step="0.1" value="0"></label><label>位置 Z <input id="pz" type="number" step="0.1" value="0"></label>
+        <label>注视点 X <input id="tx" type="number" step="0.1" value="0"></label><label>注视点 Y <input id="ty" type="number" step="0.1" value="0"></label><label>注视点 Z <input id="tz" type="number" step="0.1" value="0"></label>
+        <label>FOV 增减（度）<input id="fov" type="number" step="1" value="0"></label><div class="row"><button id="save" class="accent">保存当前机位</button><button id="discard">撤销未保存预览</button><button id="reset">清零偏移并保存</button><button id="undo-camera">撤销上次机位修改</button><button id="lock-camera">锁定当前镜头</button></div><p id="camera-lock-state"></p><p id="dirty-state"></p><div id="status" role="status">正在加载三维场景…</div>
+      </div>
+      <div class="panel"><h2>人物走位关键点</h2><label>角色 <select id="actor"></select></label><label>时刻 <select id="path-key"></select></label>
+        <label>位置 X <input id="ax" type="number" step="0.1"></label><label>位置 Y <input id="ay" type="number" step="0.1"></label><label>位置 Z <input id="az" type="number" step="0.1"></label><div class="row"><button id="save-path">保存关键点</button><button id="undo-actor">撤销上次走位修改</button><button id="lock-actor">锁定角色走位</button></div><p id="actor-lock-state"></p>
+        <p>自由观察可拖动旋转、滚轮缩放。保存后，正式导出使用相同数据。</p>
+      </div>
+      <div class="panel"><h2>当前镜头运镜模板</h2><label>模板 <select id="rig-kind"><option value="hold">固定观察</option><option value="push">缓慢推进</option><option value="truck">横向平移</option><option value="arc">小幅环绕</option></select></label><label>幅度 <input id="rig-amount" type="number" value="0.8" step="0.1" min="-5" max="5"></label><button id="preview-rig">预览当前镜头轨迹</button><p>幅度单位为米，环绕每单位为10度。从当前起幅建立轨迹；确认符合母稿后保存。不增加切镜或改时长。</p></div>
+    </aside>
+  </div>
+  <script type="module" src="./src/studio.js"></script>
+</body>
+</html>

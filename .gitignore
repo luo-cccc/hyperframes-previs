@@ -1,0 +1,12 @@
+node_modules/
+__pycache__/
+*.py[cod]
+.hyperframes/
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+.previs-*.lock
+work/
+outputs/
