@@ -18,7 +18,7 @@
 
 `npm run render` 记录渲染源与资产指纹，返回包据此判断视频是否过期。默认追踪入口、场景、包锁和 `src/lib/assets/models/textures/fonts/media/audio/shaders`，并追踪 `assetBindings[].appearanceReference`。根目录自定义脚本、外部素材等要显式加入 `scene.renderDependencies`；优先将资源放在项目中，远程 URL 需先本地化，保证导出可复现。
 
-在项目目录运行 `npm run validate`、`npm run lint`、`npm run snapshot` 和 `npm run render`。模板默认用单 worker 导出 24fps MP4，减少多个 WebGL 上下文的资源争用。
+在项目目录运行 `npm run validate`、`npm run lint`、`npm run snapshot` 和 `npm run render`。模板默认用单 worker 按 `scene.json.fps` 导出 MP4（当前默认 60 fps），减少多个 WebGL 上下文的资源争用。
 
 `npm run spatial-check` 保存按样本帧的代理检查证据；`npm run feedback` 导出当前批注和过期状态。空间报告必须与当前渲染内容/intake关联，返回包才引用；它的 NO_ISSUES_OBSERVED 不是 MEDIA PASS。
 

@@ -42,6 +42,8 @@ node scripts/create_project.mjs /path/to/demo --demo
 
 在生成的工程中执行 `npm ci`、`npm run prepare-libs`、`npm run studio`。浏览器打开服务实际输出的本地地址。重新渲染使用 `npm run render`，不要直接打开本地 HTML 文件。
 
+模板默认输出 **60 fps**。修改 `scene.json` 中的 `fps` 后运行 `npm run validate` 同步导出入口；总时长与各镜头切点必须落在所选帧率的整帧上，不能为适配帧率修改上游预算。
+
 ## 文档
 
 | 内容 | 位置 |
@@ -55,11 +57,12 @@ node scripts/create_project.mjs /path/to/demo --demo
 | 可移动工程与冻结证据 | [portable-bundle.md](references/portable-bundle.md) |
 | 采纳的设计与暂缓能力 | [adopted-designs.md](references/adopted-designs.md) |
 | 用户使用回归场景 | [user-scenarios.md](evals/user-scenarios.md) |
+| 60 fps 实测记录 | [60fps-smoke-2026-11-05.md](evals/60fps-smoke-2026-11-05.md) |
 
 ## 运行与验证边界
 
 验证基线为 Node.js 22.22.2、HyperFrames 0.9.10、Three.js 0.187.0；Python 提取工具只用标准库。模板包含本地 Three.js 浏览器文件，其 MIT 许可保留在 [THREE-LICENSE.txt](assets/starter/lib/THREE-LICENSE.txt)。
 
-本版本已做隔离用户模拟、锁/撤销/批注/来源回归，以及真实 12 秒、1280×720、24fps、288 帧的 HyperFrames 导出。仓库中的 `evals/user-scenarios.md` 是回归场景说明，不应描述为已包含完整自动化测试套件。
+此前已完成隔离用户模拟、锁/撤销/批注/来源回归，以及真实 12 秒、1280×720、24fps、288 帧的 HyperFrames 导出。默认值现已调整为 60 fps，并于 2026-11-05 完成同规格 12 秒、60 fps、720 帧的实际导出、完整解码、帧数探测、切点及非顺序跳转检查。仓库中的 `evals/user-scenarios.md` 是回归场景说明，不应描述为已包含完整自动化测试套件。
 
 示例使用色标占位人物与基础步态。声音、口型、复杂动作和最终视频模型生成未在该示例中验证。捕获 PNG 标为 `USER_CAPTURE_UNVERIFIED`，服务检查文件完整性与来源引用，不声称已重渲染比较像素。

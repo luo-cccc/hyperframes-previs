@@ -5,7 +5,7 @@
   "duration": 12,
   "width": 1280,
   "height": 720,
-  "fps": 24,
+  "fps": 60,
   "environment": { "type": "corridor", "width": 8, "height": 4, "length": 26, "doorZ": -8.8 },
   "door": { "openStart": 8.8, "openEnd": 10.2 },
   "actors": [

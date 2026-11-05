@@ -18,7 +18,7 @@
   </script>
 </head>
 <body>
-  <main id="stage" data-composition-id="corridor-previs" data-no-timeline data-start="0" data-duration="12" data-width="1280" data-height="720" data-fps="24"></main>
+  <main id="stage" data-composition-id="corridor-previs" data-no-timeline data-start="0" data-duration="12" data-width="1280" data-height="720" data-fps="60"></main>
   <script type="module">import('./src/previs.js').catch(error=>{const message=document.createElement('div');message.id='error';message.textContent=error.message;document.getElementById('stage').appendChild(message);window.__previsReject(error)});</script>
 </body>
 </html>
