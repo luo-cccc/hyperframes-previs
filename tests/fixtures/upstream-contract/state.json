@@ -1,0 +1,186 @@
+{
+  "_test_only": "SYNTHETIC TEST ONLY; fake production facts for contract guards. No real authorization or media acceptance.",
+  "state_version": "1.9",
+  "workflow_schema": "SINGLE_TEXT_CONFIRMED_ASSET_STAGES_V4",
+  "project_id": "SYNTHETIC_UPSTREAM_CONTRACT_ONLY",
+  "state_ref": "state.json",
+  "production_settings": {
+    "video_aspect_ratio": {
+      "status": "CONFIRMED",
+      "selected": "16:9",
+      "decision_ref": "SYNTHETIC-DECISION"
+    },
+    "visual_style": {
+      "status": "CONFIRMED",
+      "selected": "SYNTHETIC ONLY: geometric placeholders",
+      "decision_ref": "SYNTHETIC-DECISION"
+    },
+    "segment_max_s": {
+      "status": "CONFIRMED",
+      "selected": 12,
+      "decision_ref": "SYNTHETIC-DECISION"
+    }
+  },
+  "source_script_ref": {
+    "path": "script.md#source",
+    "version": "SRC-1",
+    "unknown_metadata": {
+      "preserve": true
+    }
+  },
+  "coverage_ledger": [
+    {
+      "formal_id": "FORMAL_1",
+      "prompt_version": "P2",
+      "budget_version": "B2",
+      "status": "DONE",
+      "source_script_version": "SRC-1",
+      "delivery_ref": "master.md#formal-1",
+      "start_state": {
+        "door_phase": 0
+      },
+      "end_state": {
+        "door_phase": 0.5
+      },
+      "checks": {
+        "TEXT": {
+          "status": "PASS",
+          "scope": "SYNTHETIC ONLY: structure and wording; no actual media.",
+          "evidence": "checks.md#formal-1"
+        }
+      }
+    },
+    {
+      "formal_id": "FORMAL_2",
+      "prompt_version": "P1",
+      "budget_version": "B1",
+      "status": "DONE",
+      "source_script_version": "SRC-1",
+      "delivery_ref": "neighbor.md",
+      "start_state": {
+        "door_phase": 0.5
+      },
+      "end_state": {
+        "door_phase": 1
+      }
+    }
+  ],
+  "prompt_versions": [
+    {
+      "formal_id": "FORMAL_1",
+      "prompt_version": "P1",
+      "budget_version": "B1",
+      "status": "INVALID",
+      "budget_status": "INVALID",
+      "delivery_ref": "old-master.md"
+    },
+    {
+      "formal_id": "FORMAL_1",
+      "prompt_version": "P2",
+      "budget_version": "B2",
+      "budget_status": "CHECKED",
+      "status": "DONE",
+      "delivery_ref": "master.md#formal-1",
+      "budget_ref": "budget.json"
+    },
+    {
+      "formal_id": "FORMAL_2",
+      "prompt_version": "P1",
+      "budget_version": "B1",
+      "budget_status": "CHECKED",
+      "status": "DONE",
+      "delivery_ref": "neighbor.md"
+    }
+  ],
+  "step_ledger": [
+    {
+      "step_id": "FORMAL_1",
+      "prompt_version": "P2",
+      "status": "DONE",
+      "delivery_ref": "master.md#formal-1"
+    }
+  ],
+  "edit_lock": "NONE",
+  "blocking_items": [],
+  "segment_plan": [
+    {
+      "formal_id": "FORMAL_2",
+      "plan_version": "PLAN-1",
+      "start_state": {
+        "door_phase": 0.5
+      },
+      "end_state": {
+        "door_phase": 1
+      }
+    }
+  ],
+  "transition_plan": [
+    {
+      "id": "HISTORICAL",
+      "from": "FORMAL_1",
+      "to": "FORMAL_2",
+      "from_prompt_version": "P1",
+      "to_prompt_version": "P1",
+      "status": "INVALID"
+    },
+    {
+      "id": "ACTIVE",
+      "from": "FORMAL_1",
+      "to": "FORMAL_2",
+      "from_prompt_version": "P2",
+      "to_prompt_version": "P1",
+      "status": "DONE",
+      "media_status": "NOT_RUN",
+      "previous_end_state": {
+        "door_phase": 0.5
+      },
+      "next_start_state": {
+        "door_phase": 0.5
+      },
+      "screen_motion": "SYNTHETIC ONLY: continuing outward",
+      "unknown_extension": {
+        "非BMP😀": 1e-7,
+        "": 9,
+        "😀": 0,
+        "values": [
+          0.5,
+          true,
+          null,
+          "Keep actual unknown fields."
+        ]
+      }
+    }
+  ],
+  "transition_review": [
+    {
+      "formal_id": "FORMAL_1",
+      "prompt_version": "P1",
+      "status": "PASS",
+      "check_scope": "TEXT",
+      "evidence": "old-checks.md"
+    },
+    {
+      "formal_id": "FORMAL_1",
+      "prompt_version": "P2",
+      "status": "PASS",
+      "check_scope": "TEXT",
+      "internal_cuts": [
+        {
+          "at_s": 4,
+          "status": "PASS",
+          "evidence": "checks.md#formal-1"
+        }
+      ]
+    },
+    {
+      "from": "FORMAL_1",
+      "to": "FORMAL_2",
+      "from_prompt_version": "P2",
+      "to_prompt_version": "P1",
+      "status": "PASS",
+      "check_scope": "TEXT",
+      "evidence": "checks.md#formal-1",
+      "media_status": "NOT_RUN"
+    }
+  ]
+}

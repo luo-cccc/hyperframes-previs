@@ -40,3 +40,7 @@
 - Three.js：https://threejs.org/docs/
 
 本文件只保存此流程需要的操作结论。遇到接口差异时查项目安装版本的 `hyperframes/dist/skills/hyperframes/references/` 和 CLI `--help`，不要安装或更新无关的全局技能或账户配置。
+
+## 0.5.0 接点与回执
+
+`npm run boundary-pack` 只提取当前成功视频的真实帧与短窗口；不代替 `npm run render`，不自动拼接正式段。条件计划用 `--plan-only`，不写虚构媒体PASS。`npm run handoff` 输出分项检查和目标状态。运行时动作/关键点/时钟数据参见 [boundary-previs.md](boundary-previs.md)，人工检查与返修参见 [scoped-receipts.md](scoped-receipts.md)。

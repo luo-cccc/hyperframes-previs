@@ -1,0 +1,368 @@
+{
+  "schemaVersion": 1,
+  "id": "dutyroom-f2-demo",
+  "title": "TEST / DEMO · 值班室连续推门 F2",
+  "duration": 12,
+  "width": 1280,
+  "height": 720,
+  "fps": 60,
+  "_demo": {
+    "classification": "TEST_DEMO_ONLY",
+    "upstream_authorization": "NOT_ESTABLISHED",
+    "binding": "NONE",
+    "story_reference": "Upstream 0.4.1 archived test fixture: 值班室的灯·夜, F1/P2 and F2/P1. This geometry is a demonstration, not an authorized mother-script binding.",
+    "formal_id": "FORMAL_2",
+    "source_version": "P1",
+    "units": "metres; Y up; +X east, -Z north / corridor; left=-local X, right=+local X; actor forward=-local Z",
+    "implementation_fill": "Primitive proxies, chosen metric coordinates and explanatory arms. Fixed feet, explicit head/gaze, palm anchor and key hand only; no anatomical IK, audio synthesis, lip sync or final-model acceptance.",
+    "time_note": "Independent segment export. Edit offsets 0 and 9 are a declared demonstration plan, not an assembled movie. The exact logical end at t=duration is not an extra export frame."
+  },
+  "environment": {
+    "type": "dutyroom",
+    "width": 6,
+    "height": 3.2,
+    "length": 8,
+    "floorCenter": [
+      0,
+      0,
+      0
+    ]
+  },
+  "door": {
+    "id": "door",
+    "type": "hinged-door",
+    "hinge": [
+      0.65,
+      0,
+      0
+    ],
+    "size": [
+      1.3,
+      2.3,
+      0.08
+    ],
+    "closedYaw": 3.141592653589793,
+    "swingSign": -1,
+    "angleKeys": [
+      {
+        "t": 0,
+        "angle": 0.7853981633974483
+      },
+      {
+        "t": 9,
+        "angle": 1.5707963267948966
+      },
+      {
+        "t": 12,
+        "angle": 1.5707963267948966
+      }
+    ]
+  },
+  "actors": [
+    {
+      "id": "xu-ning",
+      "role": "许宁 · 色标占位",
+      "color": "#8ab4bf",
+      "height": 1.68,
+      "path": [
+        {
+          "t": 0,
+          "position": [
+            0.6,
+            0,
+            0.28
+          ]
+        },
+        {
+          "t": 12,
+          "position": [
+            0.6,
+            0,
+            0.28
+          ]
+        }
+      ],
+      "yawKeys": [
+        {
+          "t": 0,
+          "yaw": 0
+        },
+        {
+          "t": 12,
+          "yaw": 0
+        }
+      ],
+      "gazeKeys": [
+        {
+          "t": 0,
+          "target": [
+            0.3954415587728429,
+            1.12,
+            -0.19798989873223333
+          ]
+        },
+        {
+          "t": 1.5,
+          "target": [
+            0.42346220910556,
+            1.12,
+            -0.22952261173284644
+          ]
+        },
+        {
+          "t": 3,
+          "target": [
+            0.4553589838486224,
+            1.12,
+            -0.25712812921102035
+          ]
+        },
+        {
+          "t": 4.5,
+          "target": [
+            0.49058612034271987,
+            1.12,
+            -0.2803341131090082
+          ]
+        },
+        {
+          "t": 6,
+          "target": [
+            0.5285408725156306,
+            1.12,
+            -0.29874350260840105
+          ]
+        },
+        {
+          "t": 7.5,
+          "target": [
+            0.5685738240346312,
+            1.12,
+            -0.3120413079508173
+          ]
+        },
+        {
+          "t": 9,
+          "target": [
+            0.6100000000000001,
+            1.12,
+            -0.32
+          ]
+        },
+        {
+          "t": 10,
+          "target": [
+            0.05,
+            1.55,
+            -2.5
+          ]
+        },
+        {
+          "t": 12,
+          "target": [
+            0.05,
+            1.55,
+            -2.5
+          ]
+        }
+      ],
+      "contacts": [
+        {
+          "hand": "left",
+          "targetId": "door",
+          "localPoint": [
+            0.32,
+            1.12,
+            -0.04
+          ],
+          "start": 0,
+          "end": 12
+        }
+      ],
+      "prop": {
+        "type": "key",
+        "hand": "right",
+        "offset": [
+          0,
+          -0.035,
+          0
+        ]
+      }
+    }
+  ],
+  "shots": [
+    {
+      "id": "F2-SH01",
+      "start": 0,
+      "end": 9,
+      "beat": "从半开45度直接延续9秒到90度；延续F1末态，左掌不离门，右手钥匙，仍看接触区。",
+      "camera": {
+        "keys": [
+          {
+            "t": 0,
+            "position": [
+              -1.45,
+              1.4,
+              1.85
+            ],
+            "target": [
+              0.48,
+              1.13,
+              -0.1
+            ],
+            "fov": 43
+          },
+          {
+            "t": 9,
+            "position": [
+              -1.45,
+              1.4,
+              1.85
+            ],
+            "target": [
+              0.48,
+              1.13,
+              -0.1
+            ],
+            "fov": 43
+          }
+        ],
+        "offset": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ],
+          "fov": 0
+        }
+      }
+    },
+    {
+      "id": "F2-SH02",
+      "start": 9,
+      "end": 12,
+      "beat": "全开后9到10秒才望向走廊；10到11秒原话轮，11到12秒句尾余韵。左掌和右手钥匙保留。",
+      "camera": {
+        "keys": [
+          {
+            "t": 9,
+            "position": [
+              -0.75,
+              1.55,
+              1.35
+            ],
+            "target": [
+              0.55,
+              1.4,
+              0.05
+            ],
+            "fov": 46
+          },
+          {
+            "t": 12,
+            "position": [
+              -0.75,
+              1.55,
+              1.35
+            ],
+            "target": [
+              0.55,
+              1.4,
+              0.05
+            ],
+            "fov": 46
+          }
+        ],
+        "offset": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ],
+          "fov": 0
+        }
+      }
+    }
+  ],
+  "timeMapping": {
+    "schema_version": "PREVIS_TIME_MAPPING_V1",
+    "segments": [
+      {
+        "input_id": "DEMO-FORMAL_2-P1",
+        "formal_id": "FORMAL_2",
+        "source_version": "P1",
+        "source_duration_s": 12,
+        "source_start_s": 0,
+        "source_end_s": 12,
+        "segment_start_s": 0,
+        "segment_end_s": 12,
+        "edit_start_s": 9,
+        "edit_end_s": 21,
+        "playback_rate": 1
+      }
+    ]
+  },
+  "performancePlan": {
+    "status": "PLAN_ONLY",
+    "feet": "FIXED_INSIDE_ROOM",
+    "key": "ONE_KEY_RIGHT_HAND",
+    "gaze": [
+      {
+        "start": 0,
+        "end": 9,
+        "target": "LEFT_PALM_CONTACT"
+      },
+      {
+        "start": 9,
+        "end": 10,
+        "target": "CORRIDOR_ONLY_AFTER_FULL_OPEN"
+      }
+    ],
+    "speech": [
+      {
+        "speech_id": "DEMO-XU-01",
+        "start": 10,
+        "end": 11,
+        "text": "灯还亮着。",
+        "speaker": "xu-ning",
+        "delivery": "低声，仅一次；11到12秒保留句尾余韵。"
+      }
+    ]
+  },
+  "audioPlan": {
+    "status": "NOT_RUN",
+    "scope": "Declared timing only. No audio file, listening check, lip sync or sound continuity approval.",
+    "events": [
+      {
+        "id": "DEMO-ROOM-TONE",
+        "start": 0,
+        "end": 12,
+        "kind": "continuous-room-tone"
+      },
+      {
+        "id": "DEMO-DOOR-FRICTION",
+        "start": 0,
+        "end": 9,
+        "kind": "door-friction",
+        "continues_from_previous": true
+      },
+      {
+        "id": "DEMO-XU-01",
+        "start": 10,
+        "end": 11,
+        "kind": "original-speech",
+        "text": "灯还亮着。"
+      }
+    ]
+  }
+}

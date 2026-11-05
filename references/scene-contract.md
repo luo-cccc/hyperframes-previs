@@ -5,7 +5,7 @@
 | 字段 | 用途 |
 |---|---|
 | `id/title/duration/width/height/fps` | 项目标识、标题、总时长与输出规格 |
-| `environment` | 模板走廊的宽、高、长与门的位置；其他场景修改 `src/previs.js` 的搭景函数 |
+| `environment` | 支持 corridor 与 dutyroom 的宽、高、长、门位；其他场景需同时实现几何与检查边界 |
 | `actors[].id/role/color/height` | 稳定角色标识、叙事身份、预演色标、身高 |
 | `actors[].path[]` | 按绝对秒排序的 `{t, position:[x,y,z]}` 路径点；首尾覆盖整场 |
 | `shots[].id/start/end/beat` | 稳定镜头 ID、连续且无重叠的时间区间、动作意图 |
@@ -30,3 +30,7 @@
 新建布局或导入 glTF 时修改 `src/previs.js`：保持 `renderAt(t)` 与 `hf-seek` 接口，加载器包含在 readiness 中，骨骼动作与道具事件都按绝对时间采样。大动作可先用占位姿态标出意图，不声称简易步态等同于动作捕捉。
 
 镜头移动请求应转成可检查的修改。例如“左移 30 厘米并同时看见两个人”：保存原镜头、修改对应 offset 或轨迹、截取关键时刻、确认两人均在画幅内，再重新导出。不要只写“已优化运镜”而不给出结果。
+
+## 0.5.0 动作、接点与时钟
+
+`door.type=hinged-door`、`angleKeys`、人物 `yawKeys/gazeKeys/contacts`、相机 `keys` 和可选 `timeMapping` 的完整单位及职责见 [接点与时钟](boundary-previs.md)。这些数据仍由统一绝对时间采样；不因分文件而重置前段已经完成的动作。`deliveryGoal/reviewRouting/transitionMap` 是不绘像素的交付元数据；实质动作、机位、模型、素材和时钟仍属于渲染身份。

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { validateScene, samplePath, sampleCamera, clamp, smooth } from './scene-data.js';
+import { validateScene, sampleCamera, clamp, stageBounds } from './scene-data.js';
+import {sampleActions} from './action-data.js';
+import {mapSegmentTime} from './time-mapping.js';
 import {planCameraRig} from './camera-rigs.js';
 
 const stage=document.getElementById('stage');
@@ -25,49 +27,82 @@ const mats={floor:mat('#344351'),wall:mat('#475360'),trim:mat('#20303e'),door:ma
 function box(w,h,d,x,y,z,material,parent=scene){const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);mesh.position.set(x,y,z);parent.add(mesh);return mesh}
 function ball(radius,x,y,z,material,parent){const mesh=new THREE.Mesh(new THREE.SphereGeometry(radius,16,12),material);mesh.position.set(x,y,z);parent.add(mesh);return mesh}
 
-const env=data.environment,half=env.width/2;
-box(env.width,.15,env.length,0,-.09,-1,mats.floor);
+const env=data.environment,half=env.width/2,bounds=stageBounds(data);
+const floorCenter=bounds.min.map((v,i)=>i===1?v:(v+bounds.max[i])/2);
+box(env.width,.15,env.length,floorCenter[0],floorCenter[1]-.09,floorCenter[2],mats.floor);
 const walls=new THREE.Group();scene.add(walls);
-box(.18,env.height,env.length,-half,env.height/2,-1,mats.wall,walls);
-box(.18,env.height,env.length,half,env.height/2,-1,mats.wall,walls);
-box(env.width,.15,env.length,0,env.height+.05,-1,mats.trim,walls);
-for(let z=-12;z<=10;z+=4){
-  for(const side of [-1,1]){
-    box(.12,env.height,.15,side*(half-.13),env.height/2,z,mats.trim,walls);
-    box(.13,.08,3.5,side*(half-.15),.58,z+1.8,mats.light,walls);
-    box(.11,1.1,2.2,side*(half-.12),2,z+1.1,mats.trim,walls);
+const doors=[];let hingedDoor=null;
+if(env.type==='corridor'){
+  box(.18,env.height,env.length,-half,env.height/2,-1,mats.wall,walls);
+  box(.18,env.height,env.length,half,env.height/2,-1,mats.wall,walls);
+  box(env.width,.15,env.length,0,env.height+.05,-1,mats.trim,walls);
+  for(let z=-12;z<=10;z+=4){
+    for(const side of [-1,1]){
+      box(.12,env.height,.15,side*(half-.13),env.height/2,z,mats.trim,walls);
+      box(.13,.08,3.5,side*(half-.15),.58,z+1.8,mats.light,walls);
+      box(.11,1.1,2.2,side*(half-.12),2,z+1.1,mats.trim,walls);
+    }
+    box(2.4,.045,.23,0,env.height-.08,z,mats.light,walls);
   }
-  box(2.4,.045,.23,0,env.height-.08,z,mats.light,walls);
+  box(env.width,env.height,.18,0,env.height/2,-1-env.length/2,mats.wall,walls);
+  if(data.door&&data.door.type!=='hinged-door'){
+    const doorZ=env.doorZ,opening=3.2;
+    for(const sign of [-1,1])box((env.width-opening)/2,env.height,.3,sign*(opening/2+(env.width-opening)/4),env.height/2,doorZ,mats.wall,walls);
+    box(opening,.65,.32,0,env.height-.325,doorZ,mats.wall,walls);
+    for(const sign of [-1,1])box(.14,3.35,.4,sign*1.68,1.675,doorZ-.02,mats.trim,walls);
+    box(3.5,.14,.4,0,3.35,doorZ,mats.trim,walls);
+    box(2.7,.08,.15,0,3.1,doorZ+.2,mats.light,walls);
+    doors.push(...[-1,1].map(sign=>{
+      const g=new THREE.Group();g.userData.sign=sign;g.position.set(sign*.8,0,doorZ);scene.add(g);
+      box(1.58,3,.18,0,1.5,0,mats.door,g);
+      box(1.31,.025,.04,0,.8,.11,mats.trim,g);box(1.31,.025,.04,0,2.15,.11,mats.trim,g);
+      box(.035,.48,.05,-sign*.65,1.5,.12,mats.light,g);return g;
+    }));
+  }
+}else{
+  for(const x of [bounds.min[0],bounds.max[0]])box(.18,env.height,env.length,x,floorCenter[1]+env.height/2,floorCenter[2],mats.wall,walls);
+  box(env.width,env.height,.18,floorCenter[0],floorCenter[1]+env.height/2,bounds.max[2],mats.wall,walls);
+  box(env.width,.15,env.length,floorCenter[0],bounds.max[1]+.05,floorCenter[2],mats.trim,walls);
+  // Simple dutyroom landmarks are static proxies. Only explicitly declared
+  // spatial.obstacles participate in collision/occlusion checks.
+  box(1.1,.08,.7,floorCenter[0]-1.5,floorCenter[1]+.78,floorCenter[2]+2.6,mats.door);
+  for(const x of [-1.95,-1.05])for(const z of [2.35,2.85])box(.06,.74,.06,floorCenter[0]+x,floorCenter[1]+.37,floorCenter[2]+z,mats.trim);
+  box(1.2,.04,.3,floorCenter[0],bounds.max[1]-.1,floorCenter[2]-1.7,mats.light,walls);
 }
-const backZ=-1-env.length/2;
-box(env.width,env.height,.18,0,env.height/2,backZ,mats.wall,walls);
-const doorZ=env.doorZ,opening=3.2;
-const doors=[];
-if(data.door){
-for(const sign of [-1,1])box((env.width-opening)/2,env.height,.3,sign*(opening/2+(env.width-opening)/4),env.height/2,doorZ,mats.wall,walls);
-box(opening,.65,.32,0,env.height-.325,doorZ,mats.wall,walls);
-for(const sign of [-1,1])box(.14,3.35,.4,sign*1.68,1.675,doorZ-.02,mats.trim,walls);
-box(3.5,.14,.4,0,3.35,doorZ,mats.trim,walls);
-box(2.7,.08,.15,0,3.1,doorZ+.2,mats.light,walls);
-doors.push(...[-1,1].map(sign=>{
-  const g=new THREE.Group();g.userData.sign=sign;g.position.set(sign*.8,0,doorZ);scene.add(g);
-  box(1.58,3,.18,0,1.5,0,mats.door,g);
-  box(1.31,.025,.04,0,.8,.11,mats.trim,g);box(1.31,.025,.04,0,2.15,.11,mats.trim,g);
-  box(.035,.48,.05,-sign*.65,1.5,.12,mats.light,g);return g;
-}));
+if(data.door?.type==='hinged-door'){
+  const door=data.door,[width,height,depth]=door.size;
+  const frame=new THREE.Group();frame.position.fromArray(door.hinge);frame.rotation.y=door.closedYaw??0;walls.add(frame);
+  for(const x of [-.06,width+.06])box(.1,height+.1,.16,x,height/2,0,mats.trim,frame);
+  box(width+.22,.1,.16,width/2,height+.05,0,mats.trim,frame);
+  if(env.type==='dutyroom'){
+    // Intersect the closed partition line with the rectangular floor, so the
+    // wall opening follows the same explicit hinge/yaw as the rendered leaf.
+    const axis=[Math.cos(frame.rotation.y),0,-Math.sin(frame.rotation.y)];let lo=-Infinity,hi=Infinity;
+    for(const i of [0,2])if(Math.abs(axis[i])>1e-9){const values=[(bounds.min[i]-door.hinge[i])/axis[i],(bounds.max[i]-door.hinge[i])/axis[i]].sort((a,b)=>a-b);lo=Math.max(lo,values[0]);hi=Math.min(hi,values[1])}
+    const floorY=bounds.min[1]-door.hinge[1],wallY=floorY+env.height/2;
+    if(Number.isFinite(lo)&&lo<0)box(-lo,env.height,.14,lo/2,wallY,0,mats.wall,frame);
+    if(Number.isFinite(hi)&&hi>width)box(hi-width,env.height,.14,(hi+width)/2,wallY,0,mats.wall,frame);
+    const top=bounds.max[1]-door.hinge[1]-height;
+    if(top>0)box(width,top,.14,width/2,height+top/2,0,mats.wall,frame);
+  }
+  hingedDoor=new THREE.Group();scene.add(hingedDoor);
+  box(width,height,depth,width/2,height/2,0,mats.door,hingedDoor);
+  box(width*.8,.035,depth+.012,width/2,height*.28,0,mats.trim,hingedDoor);
+  box(.035,.22,.05,width*.85,height*.5,depth/2+.025,mats.light,hingedDoor);
 }
-const grid=new THREE.GridHelper(env.length,env.length,0x7fbbc5,0x7fbbc5);grid.position.set(0,.005,-1);grid.material.transparent=true;grid.material.opacity=.13;scene.add(grid);
+const gridSize=Math.max(env.width,env.length),grid=new THREE.GridHelper(gridSize,Math.ceil(gridSize),0x7fbbc5,0x7fbbc5);grid.position.set(floorCenter[0],floorCenter[1]+.005,floorCenter[2]);grid.material.transparent=true;grid.material.opacity=.13;scene.add(grid);
 scene.add(new THREE.HemisphereLight('#cce5ef','#526274',2.1));
 const key=new THREE.DirectionalLight('#e4f3ff',2.5);key.position.set(-2,7,4);scene.add(key);
-const fill=new THREE.PointLight('#83ece3',36,19,2);fill.position.set(0,2.9,-8.1);scene.add(fill);
-const rear=new THREE.PointLight('#e7d0a7',25,12,2);rear.position.set(0,2.9,-12);scene.add(rear);
+const fill=new THREE.PointLight('#83ece3',36,19,2);fill.position.set(floorCenter[0],floorCenter[1]+2.9,env.type==='corridor'?-8.1:floorCenter[2]-1.5);scene.add(fill);
+const rear=new THREE.PointLight('#e7d0a7',25,12,2);rear.position.set(floorCenter[0]+(env.type==='corridor'?0:1.5),floorCenter[1]+2.9,env.type==='corridor'?-12:floorCenter[2]-3.2);scene.add(rear);
 
 function mannequin(actor){
   const g=new THREE.Group();g.userData.previsActorId=actor.id;scene.add(g);g.scale.setScalar(actor.height/1.8);
   const colored=mat(actor.color),joint=mat('#293745'),visor=mat('#101c26',{roughness:.4});
   box(.4,.5,.25,0,1.22,0,colored,g);box(.35,.18,.23,0,.89,0,joint,g);
-  ball(.16,0,1.64,0,colored,g);box(.25,.08,.06,0,1.66,-.14,visor,g);ball(.07,0,1.48,0,joint,g);
-  const legs=[];
+  const head=new THREE.Group();head.position.set(0,1.64,0);g.add(head);
+  ball(.16,0,0,0,colored,head);box(.25,.08,.06,0,.02,-.14,visor,head);ball(.07,0,1.48,0,joint,g);
+  const legs=[],arms={},hands={};
   for(const sign of [-1,1]){
     const hip=new THREE.Group();hip.position.set(sign*.105,.87,0);g.add(hip);
     box(.14,.34,.15,0,-.18,0,colored,hip);
@@ -78,12 +113,23 @@ function mannequin(actor){
     ball(.085,0,0,0,joint,arm);box(.12,.29,.12,0,-.16,0,colored,arm);
     const elbow=new THREE.Group();elbow.position.set(0,-.32,0);arm.add(elbow);elbow.rotation.x=.75;
     box(.11,.28,.11,0,-.15,0,colored,elbow);arm.rotation.x=actor.pose==='aim'?.83:.1;
+    const hand=sign<0?'left':'right',contactArm=new THREE.Group();g.add(contactArm);contactArm.visible=false;
+    const upper=box(.1,1,.1,0,0,0,colored,contactArm),lower=box(.09,1,.09,0,0,0,colored,contactArm);
+    const elbowMarker=ball(.065,0,0,0,joint,contactArm);
+    arms[hand]={legacy:arm,contactArm,upper,lower,elbowMarker,shoulder:new THREE.Vector3(sign*.285,1.41,0),sign};
+    if(actor.contacts!==undefined||actor.prop?.type==='key')hands[hand]=ball(.065,0,0,0,colored,g);
   }
   if(actor.prop?.type==='block-rifle'){
     box(.18,.13,.6,.06,1.08,-.42,joint,g);box(.05,.05,.38,.06,1.1,-.84,joint,g);
   }
+  let keyProp=null;
+  if(actor.prop?.type==='key'){
+    keyProp=new THREE.Group();g.add(keyProp);const brass=mat('#dfb75e',{metalness:.65,roughness:.4});
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(.04,.009,8,20),brass);keyProp.add(ring);
+    box(.015,.11,.015,0,-.09,0,brass,keyProp);box(.04,.018,.015,.014,-.14,0,brass,keyProp);
+  }
   const shadow=new THREE.Mesh(new THREE.CircleGeometry(.36,24),new THREE.MeshBasicMaterial({color:'#0b151e',transparent:true,opacity:.35}));shadow.rotation.x=-Math.PI/2;shadow.position.y=.012;scene.add(shadow);
-  return {g,legs,shadow};
+  return {g,legs,shadow,head,arms,hands,keyProp};
 }
 const models=new Map(data.actors.map(a=>[a.id,mannequin(a)]));
 const selectionBox=new THREE.BoxHelper(undefined,0x71e4d7);selectionBox.visible=false;scene.add(selectionBox);
@@ -113,18 +159,32 @@ for(const actor of data.actors){
 function updatePathHelpers(){for(const actor of data.actors)pathLines.get(actor.id)?.geometry.setFromPoints(actor.path.map(p=>new THREE.Vector3(p.position[0],.04,p.position[2])))}
 
 function draw(){if(selectedObject)selectionBox.setFromObject(models.get(selectedObject).g);renderer.render(scene,view==='camera'?camera:observer)}
+const limbUp=new THREE.Vector3(0,1,0);
+function setLimb(mesh,a,b){const delta=b.clone().sub(a),length=delta.length();mesh.visible=length>1e-9;if(!mesh.visible)return;mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.scale.y=length;mesh.quaternion.setFromUnitVectors(limbUp,delta.divideScalar(length))}
 function renderAt(t){
   time=clamp(Number(t)||0,0,data.duration);
   activeShot=data.shots.find(s=>time>=s.start&&time<s.end)||data.shots.at(-1);
+  const actions=sampleActions(data,time);
+  if(hingedDoor){hingedDoor.position.fromArray(actions.door.hinge);hingedDoor.rotation.y=actions.door.yaw}
+  for(const [index,door] of doors.entries())door.position.fromArray(actions.door.panelPositions[index]);
   for(const a of data.actors){
-    const state=samplePath(a.path,time),model=models.get(a.id),phase=state.distance/1.25*Math.PI*2;
-    model.g.position.fromArray(state.position);model.g.position.y+=Math.abs(Math.sin(phase))*.018*state.walking;
-    model.g.rotation.y=a.yaw??state.heading;
+    const state=actions.actors[a.id],model=models.get(a.id),phase=state.gaitPhase;
+    model.g.position.fromArray(state.modelPosition);model.g.rotation.y=state.yaw;
+    model.head.rotation.set(state.gaze.headPitch,state.gaze.headYaw,0,'YXZ');
     for(const leg of model.legs){const swing=Math.sin(phase)*leg.sign;leg.hip.rotation.x=swing*.39*state.walking;leg.knee.rotation.x=Math.max(0,-swing)*.48*state.walking}
-    model.shadow.position.set(state.position[0],.012,state.position[2]);
+    model.g.updateMatrixWorld(true);
+    for(const hand of ['left','right']){
+      const target=model.g.worldToLocal(new THREE.Vector3().fromArray(state.hands[hand].position)),arm=model.arms[hand],active=Boolean(state.hands[hand].contact)||a.prop?.type==='key'&&a.prop.hand===hand;
+      arm.legacy.visible=!active;arm.contactArm.visible=active;
+      if(model.hands[hand])model.hands[hand].position.copy(target);
+      if(active){
+        const elbow=arm.shoulder.clone().lerp(target,.5);elbow.x+=arm.sign*.06;elbow.y+=.04;
+        setLimb(arm.upper,arm.shoulder,elbow);setLimb(arm.lower,elbow,target);arm.elbowMarker.position.copy(elbow);
+      }
+    }
+    if(model.keyProp)model.keyProp.position.copy(model.g.worldToLocal(new THREE.Vector3().fromArray(state.prop.position)));
+    model.shadow.position.set(state.position[0],bounds.min[1]+.012,state.position[2]);
   }
-  const open=data.door?smooth((time-data.door.openStart)/(data.door.openEnd-data.door.openStart)):0;
-  for(const door of doors)door.position.x=door.userData.sign*(.8+1.52*open);
   const pose=sampleCamera(activeShot,time);camera.position.fromArray(pose.position);camera.fov=pose.fov;camera.lookAt(...pose.target);camera.updateProjectionMatrix();camera.updateMatrixWorld();
   draw();
 }
@@ -132,7 +192,7 @@ function setView(mode){
   if(!['camera','free','top'].includes(mode))throw new Error('Unknown view mode.');
   view=mode;controls.enabled=mode!=='camera';helpers.visible=mode!=='camera';walls.visible=mode!=='top';
   if(mode==='free'){observer.position.copy(camera.position);observer.up.set(0,1,0);controls.target.fromArray(sampleCamera(activeShot,time).target)}
-  if(mode==='top'){observer.position.set(0,22,-1);observer.up.set(0,0,-1);controls.target.set(0,0,-1)}
+  if(mode==='top'){observer.position.set(floorCenter[0],floorCenter[1]+22,floorCenter[2]);observer.up.set(0,0,-1);controls.target.fromArray(floorCenter)}
   if(mode!=='camera')controls.update();draw();
 }
 controls.addEventListener('change',draw);
@@ -209,7 +269,14 @@ window.PREVIS={
     const pngBase64=renderer.domElement.toDataURL('image/png').split(',')[1];selectionBox.visible=visible;draw();
     return {expectedRevision:revision,frame:{pngBase64,width:data.width,height:data.height,time,shotId:activeShot.id,view:'camera',objectId:selectedObject,point:{...selectionPoint}}};
   },
-  inspect(){return {time,shotId:activeShot.id,camera:sampleCamera(activeShot,time),doorOpen:data.door?smooth((time-data.door.openStart)/(data.door.openEnd-data.door.openStart)):null,actors:Object.fromEntries(data.actors.map(a=>[a.id,{...samplePath(a.path,time),yaw:models.get(a.id).g.rotation.y}])),pathHelpers:Object.fromEntries([...pathLines].map(([id,line])=>[id,Array.from(line.geometry.attributes.position.array)])),selectedObject,selectionPoint,view}}
+  inspect(){
+    const actions=sampleActions(data,time);
+    const actors=Object.fromEntries(data.actors.map(a=>{
+      const model=models.get(a.id),world=mesh=>mesh.getWorldPosition(new THREE.Vector3()).toArray();
+      return [a.id,{...actions.actors[a.id],renderedHands:Object.fromEntries(Object.entries(model.hands).map(([hand,mesh])=>[hand,world(mesh)])),renderedProp:model.keyProp?world(model.keyProp):null}];
+    }));
+    return {time,shotId:activeShot.id,camera:sampleCamera(activeShot,time),doorOpen:actions.door?.open??null,door:actions.door,actions,clocks:mapSegmentTime(data,time),actors,pathHelpers:Object.fromEntries([...pathLines].map(([id,line])=>[id,Array.from(line.geometry.attributes.position.array)])),selectedObject,selectionPoint,view};
+  }
 };
 window.addEventListener('hf-seek',event=>{selectedObject=null;selectionBox.visible=false;setView('camera');renderAt(event.detail.time)});
 renderAt(0);window.__previsResolve();

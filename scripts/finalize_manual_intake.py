@@ -10,9 +10,10 @@ import re
 import sys
 sys.dont_write_bytecode = True
 from intake_storyboard import read_json, require, finite, local_ref, section_text
+from upstream_contract import ADAPTER_VERSION, collect_transition_context, upstream_provenance
 
 
-def finalize(draft_file, output):
+def finalize(draft_file, output, upstream_skill_dir=None):
     draft = read_json(draft_file)
     for field in ('project_id', 'formal_id', 'prompt_version', 'budget_version'):
         require(isinstance(draft.get(field), str) and draft[field].strip(), f'{field} must come from the actual upstream delivery.')
@@ -76,7 +77,12 @@ def finalize(draft_file, output):
     packet = {k: copy.deepcopy(draft[k]) for k in ('project_id', 'formal_id', 'prompt_version', 'budget_version', 'production_settings', 'budget', 'upstream_snapshot')}
     for field in ('episode_id', 'scene_id', 'asset_catalog', 'transcription_notes'):
         if field in draft: packet[field] = copy.deepcopy(draft[field])
-    packet.update(schema_version='STORYBOARD_PREVIS_ADAPTER_V1', adapter_version='0.4.0', input_mode='MANUAL_TRANSCRIPTION', validation_profile='MANUAL_EVIDENCE_V1', sources=sources, master={'ref': draft.get('master', {}).get('ref') or next(row['original_ref'] for row in sources if row['role'] == 'master'), 'text': master, 'text_sha256': hashlib.sha256(master.encode('utf-8')).hexdigest()}, semantic_review='NOT_RUN', upstream_writes=False)
+    packet.update(schema_version='STORYBOARD_PREVIS_ADAPTER_V1', adapter_version=ADAPTER_VERSION, input_mode='MANUAL_TRANSCRIPTION', validation_profile='MANUAL_EVIDENCE_V1', sources=sources, master={'ref': draft.get('master', {}).get('ref') or next(row['original_ref'] for row in sources if row['role'] == 'master'), 'text': master, 'text_sha256': hashlib.sha256(master.encode('utf-8')).hexdigest()}, semantic_review='NOT_RUN', upstream_writes=False)
+    packet['upstream_provenance'] = upstream_provenance(upstream_skill_dir)
+    packet['transition_context'] = collect_transition_context(snapshot, packet['formal_id'], packet['prompt_version'], next(row['path'] for row in sources if row['role'] == 'state'))
+    packet['diagnostics'] = []
+    if 'scope' not in coverage.get('checks', {}).get('TEXT', {}):
+        packet['diagnostics'].append({'code': 'TEXT_SCOPE_NOT_DECLARED', 'path': '/upstream_snapshot/coverage/checks/TEXT', 'message': 'No TEXT scope was transcribed; no scope or local semantic/media PASS is invented.'})
     return packet
 
 
@@ -84,11 +90,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--draft', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument("--upstream-skill-dir", type=Path, help="Actual upstream package directory; provenance metadata only.")
     args = parser.parse_args()
     try:
         output = args.out.resolve()
         require(not output.exists(), 'Output exists; preserve the previous evidence packet and use a new revision.')
-        packet = finalize(args.draft.resolve(), output)
+        packet = finalize(args.draft.resolve(), output, args.upstream_skill_dir)
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open('x', encoding='utf-8', newline='\n') as stream:
             json.dump(packet, stream, ensure_ascii=False, indent=2, allow_nan=False); stream.write('\n')

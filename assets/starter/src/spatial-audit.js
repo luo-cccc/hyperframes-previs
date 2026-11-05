@@ -1,4 +1,4 @@
-import {validateScene,samplePath,sampleCamera} from './scene-data.js';
+import {validateScene,samplePath,sampleCamera,stageBounds} from './scene-data.js';
 
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -89,7 +89,7 @@ function framingPoints(state,mode){
 /** Deterministic, sampled proxy geometry checks. This is not a pixel/physics/semantic approval. */
 export function auditScene(scene,options={}){
   if(!object(options))invalid(['options must be an object.']);
-  const config=validateAuditInput(scene,options),frameCount=Math.round(scene.duration*scene.fps);
+  const config=validateAuditInput(scene,options),frameCount=Math.round(scene.duration*scene.fps),bounds=stageBounds(scene);
   if(!Number.isSafeInteger(frameCount)||frameCount<1)invalid(['Export frame count is outside the safe integer range.'],'SPATIAL_SAMPLE_BUDGET_EXCEEDED');
   const plannedSamples=Math.ceil(frameCount/config.everyFrames)+((frameCount-1)%config.everyFrames===0?0:1);
   if(plannedSamples>config.maxSamples)invalid([`${plannedSamples} sample frames exceed the explicit maxSamples budget of ${config.maxSamples}; choose an explicit everyFrames value or raise maxSamples. No automatic decimation was performed.`],'SPATIAL_SAMPLE_BUDGET_EXCEEDED');
@@ -114,12 +114,12 @@ export function auditScene(scene,options={}){
   for(let sampleIndex=0;sampleIndex<frames.length;sampleIndex++){
     const frame=frames[sampleIndex],time=frame/scene.fps,shot=scene.shots.find(item=>time>=item.start&&time<item.end)||scene.shots.at(-1),events=checkStart(frame,sampleIndex,shot);
     const states=scene.actors.map(actor=>({id:actor.id,height:actor.height,radius:actor.radius??.22,position:samplePath(actor.path,time).position}));
-    const pose=sampleCamera(shot,time),basis=cameraBasis(pose),env=scene.environment,halfWidth=env.width/2,nearZ=-1-env.length/2,farZ=-1+env.length/2;
+    const pose=sampleCamera(shot,time),basis=cameraBasis(pose);
     for(const actor of states){
       const [x,y,z]=actor.position;
-      if(y< -config.tolerance)events.add('ACTOR_BELOW_FLOOR',[actor.id],{position:actor.position,floorY:0,tolerance_m:config.tolerance});
-      if(y+actor.height>env.height+config.tolerance)events.add('ACTOR_ABOVE_CEILING',[actor.id],{topY:y+actor.height,ceilingY:env.height});
-      if(x-actor.radius< -halfWidth-config.tolerance||x+actor.radius>halfWidth+config.tolerance||z-actor.radius<nearZ-config.tolerance||z+actor.radius>farZ+config.tolerance)events.add('ACTOR_OUTSIDE_STAGE',[actor.id],{position:actor.position,radius_m:actor.radius,bounds:{min:[-halfWidth,0,nearZ],max:[halfWidth,env.height,farZ]}});
+      if(y<bounds.min[1]-config.tolerance)events.add('ACTOR_BELOW_FLOOR',[actor.id],{position:actor.position,floorY:bounds.min[1],tolerance_m:config.tolerance});
+      if(y+actor.height>bounds.max[1]+config.tolerance)events.add('ACTOR_ABOVE_CEILING',[actor.id],{topY:y+actor.height,ceilingY:bounds.max[1]});
+      if(x-actor.radius<bounds.min[0]-config.tolerance||x+actor.radius>bounds.max[0]+config.tolerance||z-actor.radius<bounds.min[2]-config.tolerance||z+actor.radius>bounds.max[2]+config.tolerance)events.add('ACTOR_OUTSIDE_STAGE',[actor.id],{position:actor.position,radius_m:actor.radius,bounds:{min:bounds.min,max:bounds.max}});
       for(const obstacle of config.obstacles)if(cylinderIntersectsBox(actor,obstacle,config.tolerance))events.add('ACTOR_INTERSECTS_OBSTACLE',[actor.id],{position:actor.position,proxyRadius_m:actor.radius,obstacle:{min:obstacle.min,max:obstacle.max}},{obstacleId:obstacle.id});
     }
     for(let i=0;i<states.length;i++)for(let j=i+1;j<states.length;j++){
@@ -149,7 +149,7 @@ export function auditScene(scene,options={}){
   return {
     schema_version:'PREVIS_SPATIAL_V1',scope:'SAMPLED_PROXY_GEOMETRY',status:issues.length?'ISSUES_FOUND':'NO_ISSUES_OBSERVED',
     sampling:{basis:'EXPORT_FRAME_TIMES',fps:scene.fps,frameCount,everyFrames:config.everyFrames,sampleCount:frames.length,sampleFrames:frames,sampleTimes_s:sampleTimes,first_s:sampleTimes[0],last_s:sampleTimes.at(-1),maxSamples:config.maxSamples},
-    checks:{actorOverlap:true,stageBounds:'CORRIDOR_CENTER_Z_MINUS_ONE',floorAndCeiling:true,explicitObstacleCollision:true,requiredFramingOnly:true,proxyOcclusion:config.checkOcclusion,verticalProjectionFallback},
+    checks:{actorOverlap:true,stageBounds:bounds.basis,dynamicDoorContacts:'NOT_CHECKED',floorAndCeiling:true,explicitObstacleCollision:true,requiredFramingOnly:true,proxyOcclusion:config.checkOcclusion,verticalProjectionFallback},
     thresholds:{defaultActorRadius_m:.22,collisionTolerance_m:config.tolerance,cameraNear_m:config.near},
     counts:{issueGroups:issues.length,issueObservations,samplesWithIssues,byCode,severity:{warning:issues.length}},issues,
     limitations:[
@@ -157,7 +157,7 @@ export function auditScene(scene,options={}){
       'Only declared framing.requiredActors are checked for image visibility. Other actors may intentionally be cropped or off screen.',
       'Occlusion checks the ray to the required proxy centre, not the full visible silhouette; a warning needs visual review.',
       'Undeclared scenery, dynamic doors, props and animated blockers are not inferred from the renderer. Declare an appropriate proxy or inspect the actual frames.',
-      'Stage bounds match the starter corridor: floor Y=0, ceiling=environment.height, Z centre=-1. Other scene builders must adapt the bounds check.',
+      `Stage bounds match ${bounds.basis}: min=${JSON.stringify(bounds.min)}, max=${JSON.stringify(bounds.max)}. Dynamic door-to-hand targets are not a general collision or reach proof.`,
       'Exactly vertical camera directions use world -Z to resolve the projection roll. A custom camera-up/roll rig requires matching projection logic and visual verification.',
       'Observed time ranges span consecutive samples only. Intermediate unsampled times, detailed performance, speech and narrative correctness are not approved.',
       'No issues observed is limited to these sampled proxy checks; it is not full media or semantic PASS.'

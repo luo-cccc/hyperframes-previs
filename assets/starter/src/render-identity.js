@@ -2,6 +2,7 @@
 export function renderSceneContent(scene){
   const value=structuredClone(scene);
   delete value.editorHistory;delete value.editLocks;
+  delete value.deliveryGoal;delete value.reviewRouting;delete value.transitionMap;
   return value;
 }
 function normalized(value){return Array.isArray(value)?value.map(normalized):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,normalized(value[key])])):value}

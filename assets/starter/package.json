@@ -13,7 +13,8 @@
     "spatial-check": "node scripts/spatial-check.mjs",
     "feedback": "node scripts/feedback-export.mjs",
     "render": "node scripts/render.mjs",
-    "handoff": "node scripts/handoff.mjs"
+    "handoff": "node scripts/handoff.mjs",
+    "boundary-pack": "node scripts/boundary-pack.mjs"
   },
   "dependencies": {
     "hyperframes": "0.9.10",

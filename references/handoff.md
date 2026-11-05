@@ -1,5 +1,7 @@
 # 给下游视频模型的参考包
 
+0.5.0 增加 [分项回执与目标状态](scoped-receipts.md) 及 [接点证据](boundary-previs.md)。新人工检查使用 PREVIS_REVIEW_V2，旧 PREVIS_REVIEW_V1 仅按下述原范围复用，不自动补成声音/接点/平台通过。
+
 ## 上游分镜适配模式
 
 0.4.0 反馈由 `npm run feedback` 独立导出：`handoff/feedback.md/json` 以及包含PNG的 `handoff/feedback-packages/<identity>/`，状态与证据不塞进模型提示词。交付整个包目录。`npm run handoff` 仅在报告身份匹配时引用 `review/spatial-report.json`，否则标为 NOT_RUN_OR_STALE。

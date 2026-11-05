@@ -5,7 +5,7 @@ description: 作为 script-to-storyboard-prompts 的下游预演适配技能，�
 
 # HyperFrames 分镜下游预演适配
 
-适配版本 0.4.0。输入 `STORYBOARD_PREVIS_ADAPTER_V1`，JSON 状态校验 `SCOPED_STATE_V2`；画面身份 `PREVIS_RENDER_CONTENT_V2`。将 `script-to-storyboard-prompts` 已交付的母稿编译成可编辑、可审阅的三维预演，原段号、母稿和预算版本不变。Three.js 管场景与动作，HyperFrames 按帧导出。
+适配版本 0.5.0。输入 `STORYBOARD_PREVIS_ADAPTER_V1`，新 JSON 状态校验 `SCOPED_STATE_V3`（旧 V2 保留原语义）；画面身份 `PREVIS_RENDER_CONTENT_V2`。将 `script-to-storyboard-prompts` 已交付的母稿编译成可编辑、可审阅的三维预演，原段号、母稿和预算版本不变。Three.js 管场景与动作，HyperFrames 按帧导出。
 
 ## 开始工作
 
@@ -15,7 +15,7 @@ description: 作为 script-to-storyboard-prompts 的下游预演适配技能，�
 
 上游七步和正式段覆盖继续由上游管理。本适配器读取权威状态，在 `<项目>/previs/<formal_id>/<prompt_version>/` 写自己的文件，不修改上游 `next_required`、游标、覆盖、母稿或预算。用户仅说“继续”时按上游当前目标执行；只有当前请求包含预演或已明确选择预演交付时才接入。一个已授权预演请求内，读取、搭建、检查、导出可以连续完成。
 
-支持状态 1.8/V3 的现有文字交付与 1.9/V4 的 JSON 项目。JSON 使用 `scripts/intake_storyboard.py` 只读提取；自由文本/会话由代理实际读取并整理，使用 `scripts/finalize_manual_intake.py` 封存真实证据，不自动迁移或猜解析旧状态。正常推进其他段不会使目标段自动失效；本段版本、相关资产、首尾与所选原文改变时重新适配。旧版 STATE_JSON intake 缺少范围校验资料时明确重提取，不静默升级。
+接收上游技能 0.4.1，支持状态 1.8/V3 的现有文字交付与 1.9/V4 的 JSON 项目；不以状态版本推测技能包版本。JSON 使用 `scripts/intake_storyboard.py` 只读提取；自由文本/会话由代理实际读取并整理，使用 `scripts/finalize_manual_intake.py` 封存真实证据，不自动迁移或猜解析旧状态。正常推进其他段不会使目标段自动失效；本段版本、相关资产、首尾与所选原文改变时重新适配。旧版 STATE_JSON intake 缺少范围校验资料时明确重提取，不静默升级。
 
 使用足以检查构图、走位、遮挡与时机的最简几何体。稳定色标对应上游人物，环境只保留相关空间和地标；需要详细动作再接有权使用的模型。图片职责、动作职责和镜头职责分开，不承诺简化预演能强制下游模型逐像素跟随。
 
@@ -57,12 +57,15 @@ npm run lint
 npm run spatial-check
 npm run snapshot
 npm run render
+npm run boundary-pack
 npm run handoff
 npm run feedback
 node scripts/bundle.mjs --project . --out <项目外的新交付包目录>
 ```
 
 以上命令在模板的 `package.json` 中定义。依赖固定为已验证的 HyperFrames 0.9.10 与 Three.js 0.187.0；新环境可更新，但先查当前官方 API，再重复导出验证，不能只改版本号。
+
+需要连接预演时读 [接点与时钟](references/boundary-previs.md)，承接既有转场计划、版本、相位和揭示边界；文件边界不自动产生切镜。接点提取仅从实际当前视频取样，不等于运动或声音验收。用户要求受阻时，按 [分项回执](references/scoped-receipts.md)区分已交付文件与目标完成状态，返修仅输出归责请求，不写上游。
 
 字段见 [场景契约](references/scene-contract.md)，来源/返修见 [上游适配](references/upstream-adapter.md)，锁/撤销/批注/空间检查见 [编辑与画面反馈](references/editor-review.md)。按需读 [渲染运行时](references/runtime.md)、[返回包](references/handoff.md) 和 [可移动交付](references/portable-bundle.md)。采纳与暂缓的外部设计见 [设计依据](references/adopted-designs.md)，无需把外部仓库当制作前驱。
 

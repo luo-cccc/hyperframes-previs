@@ -1,0 +1,13 @@
+{
+  "schema_version": "PREVIS_BOUNDARY_PLAN_V1",
+  "connections": [
+    {
+      "id": "F1-F2-door",
+      "kind": "action",
+      "from": { "project": ".", "shot_id": "F1-SH02", "time_s": 8.983333333333333 },
+      "to": { "project": "../F2", "shot_id": "F2-SH01", "time_s": 0 },
+      "window_before_s": 0.2,
+      "window_after_s": 0.2
+    }
+  ]
+}

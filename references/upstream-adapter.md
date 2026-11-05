@@ -4,7 +4,7 @@
 
 上游负责分析、制作条件确认、人物/场景/道具文字资产、集场规划、场分析、预算分段、完整母稿，以及正式版本和剧情覆盖。本适配器接收已有效交付的目标段，制作三维媒体参考；它是可选下级能力，不新增上游第八步或强制前驱。
 
-对照仓库 `luo-cccc/script-to-storyboard-prompts` 的提交 `0f3c747ee373f33f599408e00952a5bbc940e4da`、技能 0.3.0、状态 1.9/V4，以及本地已有的 0.2.0、状态 1.8/V3。只读取实际版本，不为了预演升级或重建权威状态。
+对照仓库 `luo-cccc/script-to-storyboard-prompts` 的提交 `6c434231ccf055b1c987793a3bebb394eabffcd5`、技能 0.4.1、状态 1.9/V4；原 0.3.0/1.9 和 0.2.0/1.8 输入继续按实际格式复核。只读取实际版本，不为了预演升级或重建权威状态。
 
 上游镜头事实位于完整母稿的“景别、机位”“运镜及拍摄主体”“构图”“画面内容”“声效”；时间码相对当前正式段 0 秒。预算、台词话轮和状态分别核对，不把资产图提示词、预算计划或合成机械夹具当作真实完成的母稿。
 
@@ -38,7 +38,7 @@ python -X utf8 scripts/intake_storyboard.py --state /actual/project/run-state.js
 
 ## intake 契约与三维项目
 
-由工具封存，避免手写哈希。核心字段为 `schema_version`、`adapter_version`、`input_mode`、项目/段/母稿/预算版本、完整 `production_settings` 与 `budget`、`master.ref/text/text_sha256`、`sources`、`upstream_snapshot`、`semantic_review=NOT_RUN` 和 `upstream_writes=false`。JSON 提取另外记录 `validation_profile=SCOPED_STATE_V2` 及 `state_scope`。
+由工具封存，避免手写哈希。核心字段为 `schema_version`、`adapter_version`、`input_mode`、项目/段/母稿/预算版本、完整 `production_settings` 与 `budget`、`master.ref/text/text_sha256`、`sources`、`upstream_snapshot`、`semantic_review=NOT_RUN` 和 `upstream_writes=false`。新 JSON 提取记录 `validation_profile=SCOPED_STATE_V3` 及 `state_scope`；旧 V2 保留原语义，不改标签升级。
 
 `sources` 必须实际提供 `state`、`budget`、`master`、`source_script`、`text_evidence` 五种职责的本地来源与初次哈希。共享预算按三版本选择器核对；母稿、证据和原文可使用明确 Markdown fragment，只核对该片段。没有明确 fragment 的文件仍保守核对全文，不猜正文范围。状态只重核当前目标的有效性、确认设置、源版本、首尾与相关资产，忽略单纯 `state_seq/next_required` 或其他段的推进。
 
@@ -91,3 +91,11 @@ python -X utf8 <skill-dir>/scripts/finalize_manual_intake.py --draft <项目>/ma
 上游接收该回执时可按其现有媒体观察规则人工登记局部观察，`scope=PREVIS_CAMERA_BLOCKING`；最终成片 MEDIA 检查与生成任务保持其实际状态。写回状态需沿用上游提交机制和当前授权，不能让预演工具直接推进正式段。机位微调若改变正式母稿的摄影事实，也须交回对应返修；只修复预演实现错误时修本地适配项目即可。
 
 相关正文版本、预算、源版本或资产改变时报告过期；无关状态推进、共享文档其他片段追加不自动失效。复用只覆盖实际未受影响资源，新版本重新提取和审片。旧 intake 缺少新范围证据时请重新提取，旧回执保留以便追溯；不要手改 profile 伪装已核对。
+
+## 0.4.1 的局部连接上下文
+
+`source_script_ref.path` 与 `location` 均可用，但冲突不猜取一个。可选 `--upstream-skill-dir <真实上游包目录>` 只记录包版本/提交/文档哈希；未提供时 UNKNOWN，技能包全局更新不自动使本段失效。
+
+`transition_context` 收集与本 formal/prompt 相关的原 plans/reviews、端点版本和实际检查范围。core状态与连接依赖分开；相关转场变化由 `checkUpstream().transitions.status=STALE` 返回，正确母稿和未受影响视频保留，接点包及对应边界review待复核。旧工程需重新提取才能采用新范围，不能伪造旧证据。详见 [接点与时钟](boundary-previs.md) 和 [分项回执](scoped-receipts.md)。
+
+明确的 LOOK/STATE 绑定同时支持上游顶层 typed 字段与 `character_assets[].four_views[]` 的 typed 字段或规范 `version=LOOK-1/STATE-BASE`。保留选中四视图记录的来源，不能从人物描述猜版本，也不能把不同记录的 LOOK 与 STATE 拼成不存在的组合。没有提供这些显式绑定的旧工程仍按原档案范围保守复核。

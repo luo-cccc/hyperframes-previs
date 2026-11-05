@@ -57,7 +57,7 @@ async function initializeStudio(){
     });
     resize();seek(0);message('可调整机位或人物关键点。');
     initialRuntimeToken=(await projectApi('./__previs/source')).runtime_sha256;
-    await refreshAnnotations();
+    await refreshAnnotations();await refreshDelivery();
   }catch(error){message(error.message,true)}
 }
 frame.addEventListener('load',initializeStudio);
@@ -121,3 +121,20 @@ $('check-spatial').onclick=()=>action(async()=>{
   message('已检查磁盘中的已保存场景。详细代理检查范围需结合画面审阅。');
 });
 window.addEventListener('beforeunload',event=>{if(api?.dirtyShots.length){event.preventDefault();event.returnValue=''}});
+
+const checkLabels={source_structure:'来源与结构',text_alignment:'母稿对齐',render_specs:'视频规格',spatial_proxy:'代理空间',boundary_source:'接点来源',boundary_extraction:'接点提取',boundary_frame:'接点画面',boundary_motion:'接点运动',audio:'声音',capability:'平台能力',inputs:'实际输入',platform_submission:'平台提交',final_model:'最终媒体'};
+const resultLabels={PASS:'通过',CHECKED:'已检查',FAIL:'未通过',BLOCKED:'受阻',PENDING:'待补充',UNKNOWN:'未知',NOT_RUN:'未检查',NOT_IMPLEMENTED:'未实现',NOT_APPLICABLE:'不适用',STALE:'需重新核对'};
+async function refreshDelivery(){
+  const data=await projectApi('./__previs/delivery'),host=$('delivery-checks');host.replaceChildren();
+  if(!data.available){$('delivery-summary').textContent='尚未生成交付回执。';return}
+  const goal=data.goal||{};
+  $('delivery-summary').textContent=(data.current?'':'回执需更新。')+({COMPLETED:'本目标已完成',IN_PROGRESS:'本目标仍有待检查项',BLOCKED:'本目标受阻'})[goal.status]+' · '+(goal.target||'PREVIS')+'。已交付的文件与目标完成情况分别记录。';
+  for(const [name,item] of Object.entries(data.checks)){const row=document.createElement('div');row.className='delivery-check';row.textContent=(checkLabels[name]||name)+'：'+(resultLabels[item.status]||item.status)+'。'+item.scope;host.append(row)}
+}
+$('refresh-delivery').onclick=()=>action(refreshDelivery);
+$('build-handoff').onclick=()=>action(async()=>{const result=await projectApi('./__previs/handoff',{});await refreshDelivery();message('已按保存数据更新回执。目标状态：'+result.goal.status+'；详细范围见分项检查。')});
+$('build-boundary').onclick=()=>action(async()=>{
+  setPlaying(false);if(api?.dirtyShots.length)throw new Error('请先保存或撤销机位草稿，再提取与正式视频一致的接点证据。');
+  $('build-boundary').disabled=true;
+  try{await projectApi('./__previs/boundary',{});await projectApi('./__previs/handoff',{});await refreshDelivery();message('接点证据已提取；画面、运动与声音仍需按实际范围分别检查。')}finally{$('build-boundary').disabled=false}
+});

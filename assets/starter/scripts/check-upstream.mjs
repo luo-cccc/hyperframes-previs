@@ -1,6 +1,7 @@
 import { readFile, access } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { collectTransitionContext, checkTransitionContext, resolveSourceScriptRef } from './transition-context.mjs';
 
 export const sha256=data=>createHash('sha256').update(data).digest('hex');
 const near=(a,b)=>typeof a==='number'&&typeof b==='number'&&Math.abs(a-b)<1e-6;
@@ -53,7 +54,8 @@ function sectionText(text,fragment){
   throw new Error(`Upstream adapter: cannot locate explicit fragment #${fragment}; use a precise heading/anchor or a dedicated source file.`);
 }
 
-function currentStateScope(state,formalId){
+export function currentStateScope(state,formalId,profile='SCOPED_STATE_V3'){
+  expect(['SCOPED_STATE_V2','SCOPED_STATE_V3'].includes(profile),'unsupported scoped state validation profile.');
   const rows=(state.coverage_ledger||[]).filter(row=>row.formal_id===formalId);
   expect(rows.length===1&&rows[0].status==='DONE','target no longer has one current DONE coverage record.');
   const coverage=rows[0],script=state.source_script_ref;
@@ -68,17 +70,39 @@ function currentStateScope(state,formalId){
   expect(textCheck.status==='PASS'&&typeof textCheck.evidence==='string'&&textCheck.evidence.trim(),'target TEXT evidence is no longer valid.');
   const steps=(state.step_ledger||[]).filter(row=>row.step_id===formalId&&!row.request_id&&['DONE','REUSED'].includes(row.status)&&(row.prompt_version||coverage.prompt_version)===coverage.prompt_version);
   expect(steps.length>0,'no completed target step evidence.');
-  for(const blocker of state.blocking_items||[]){const blocks=blocker.blocks||[];expect(!blocks.includes(formalId)&&!blocks.includes('*')&&blocker.step_id!==formalId,'a current blocker applies to this target.')}
+  for(const blocker of state.blocking_items||[]){if(profile==='SCOPED_STATE_V3'&&blocker.request_id&&!(blocker.blocks||[]).includes(formalId))continue;const blocks=blocker.blocks||[];expect(!blocks.includes(formalId)&&!blocks.includes('*')&&blocker.step_id!==formalId,'a current blocker applies to this target.')}
   expect(![formalId,coverage.segment_id].includes(state.edit_lock)||[null,undefined,'NONE'].includes(state.edit_lock),'target is edit-locked.');
   const settings={};
   for(const key of ['video_aspect_ratio','visual_style','segment_max_s']){const item=state.production_settings?.[key]||{};expect(item.status==='CONFIRMED'&&item.decision_ref&&item.selected!==null&&item.selected!==undefined,`${key} is no longer confirmed.`);settings[key]=pick(item,['selected','status','decision_ref'])}
-  return {profile:'SCOPED_STATE_V2',project_id:state.project_id,state_version:state.state_version,workflow_schema:state.workflow_schema,production_settings:settings,source_script_ref:script,coverage:{...pick(coverage,['formal_id','episode_id','scene_id','segment_id','prompt_version','budget_version','source_script_version','chains','start_cursor','end_cursor','start_anchor','end_anchor','start_state','end_state','delivery_ref','status']),TEXT:pick(textCheck,['status','evidence'])},prompt:pick(prompt,['formal_id','prompt_version','budget_version','budget_status','budget_ref','delivery_ref','status']),steps:steps.map(row=>pick(row,['step_id','status','prompt_version','delivery_ref']))};
+  return {profile,project_id:state.project_id,state_version:state.state_version,workflow_schema:state.workflow_schema,production_settings:settings,source_script_ref:script,coverage:{...pick(coverage,['formal_id','episode_id','scene_id','segment_id','prompt_version','budget_version','source_script_version','chains','start_cursor','end_cursor','start_anchor','end_anchor','start_state','end_state','delivery_ref','status']),TEXT:pick(textCheck,profile==='SCOPED_STATE_V3'?['status','scope','evidence']:['status','evidence'])},prompt:pick(prompt,['formal_id','prompt_version','budget_version','budget_status','budget_ref','delivery_ref','status']),steps:steps.map(row=>pick(row,['step_id','status','prompt_version','delivery_ref']))};
+}
+
+// Keep transition data outside the core equality comparison.
+export function snapshotV3(state,formalId){
+  const core=currentStateScope(state,formalId,'SCOPED_STATE_V3');
+  return {core,transition_context:collectTransitionContext(state,formalId,core.coverage.prompt_version)};
 }
 
 const registry=value=>Array.isArray(value)?value:value&&typeof value==='object'?Object.entries(value).map(([id,entry])=>({id,...(entry&&typeof entry==='object'?entry:{text:entry})})):[];
 const assetId=entry=>entry.id||entry.character_id||entry.asset_id;
+// Expand only explicit typed fields or the upstream four-view LOOK/STATE version token.
+// Free-form character descriptions never become machine provenance.
+export function assetVersionRecords(row){
+  const result=[];
+  if(row.look_version||row.state_version)result.push(row);
+  for(const view of Array.isArray(row.four_views)?row.four_views:[]){
+    if(!view||typeof view!=='object'||Array.isArray(view))continue;
+    const match=typeof view.version==='string'?view.version.match(/^\s*(LOOK-[^/\s]+)\s*\/\s*(STATE-[^/\s]+)\s*$/):null;
+    const look=view.look_version||match?.[1],state=view.state_version||match?.[2];
+    if(!look&&!state)continue;
+    const parent={...row};delete parent.four_views;
+    result.push({...parent,...(look?{look_version:look}:{}),...(state?{state_version:state}:{}),four_views:[view]});
+  }
+  return result.length?result:[row];
+}
 function selectedAssetRecords(state,key,id,binding){
   let rows=registry(state[key]).filter(row=>assetId(row)===id);
+  if(binding&&key==='character_assets'&&(binding.look_version||binding.state_version))rows=rows.flatMap(assetVersionRecords);
   if(binding&&key==='character_assets')for(const field of ['look_version','state_version'])if(binding[field])rows=rows.filter(row=>row[field]===binding[field]);
   if(binding?.profile_version&&key==='character_profiles')rows=rows.filter(row=>row.version===binding.profile_version||row.profile_version===binding.profile_version);
   return rows;
@@ -139,9 +163,13 @@ export async function checkUpstream(root,scene){
       expect(start>=0&&selected.slice(start).trim()===packet.master.text.replace(/\r\n?/g,'\n').trim(),'packet mother-script copy differs from its actual source; re-extract instead of manually editing a sealed intake.');
     }
     if(source.role==='state'&&packet.input_mode==='STATE_JSON'){
-      expect(packet.validation_profile==='SCOPED_STATE_V2'&&packet.state_scope?.profile==='SCOPED_STATE_V2','legacy STATE_JSON intake lacks scoped authority validation; refresh intake from the effective upstream state (do not silently relabel it).');
+      expect(['SCOPED_STATE_V2','SCOPED_STATE_V3'].includes(packet.validation_profile)&&packet.state_scope?.profile===packet.validation_profile,'legacy STATE_JSON intake lacks scoped authority validation; refresh intake from the effective upstream state (do not silently relabel it).');
       liveState=strictJson(content.toString('utf8'),'live state JSON');
-      expect(same(currentStateScope(liveState,packet.formal_id),packet.state_scope),'target lineage/settings/start-end evidence changed; refresh/review this adapter.');
+      // Unchanged sealed aliases were resolved during intake. Reopening their
+      // original absolute paths would break a portable read-only evidence copy.
+      if(packet.validation_profile==='SCOPED_STATE_V3'&&!same(liveState.source_script_ref,packet.state_scope.source_script_ref))await resolveSourceScriptRef(liveState.source_script_ref,path.dirname(sourceFile));
+      const current=currentStateScope(liveState,packet.formal_id,packet.validation_profile);
+      expect(same(current,packet.state_scope),'target lineage/settings/start-end evidence changed; refresh/review this adapter (including the selected TEXT status/scope/evidence).');
     }else if(source.selector?.kind==='JSON_BUDGET_V1'){
       const selector=source.selector;
       expect(source.role==='budget','JSON budget selector belongs only to a budget source.');
@@ -161,7 +189,7 @@ export async function checkUpstream(root,scene){
   }
   const settings=packet.production_settings||{};
   if(packet.input_mode==='STATE_JSON'){
-    expect(packet.state_scope?.profile==='SCOPED_STATE_V2','scoped state validation is missing.');
+    expect(['SCOPED_STATE_V2','SCOPED_STATE_V3'].includes(packet.state_scope?.profile),'scoped state validation is missing.');
     const selected=Object.fromEntries(['video_aspect_ratio','visual_style','segment_max_s'].map(key=>[key,pick(settings[key]||{},['selected','status','decision_ref'])]));
     expect(same(selected,packet.state_scope.production_settings),'packet production_settings drifted from the scoped authority snapshot.');
   }
@@ -195,12 +223,14 @@ export async function checkUpstream(root,scene){
     expect(profile&&near(profile.height_cm,binding.height_cm),`${actor.id}: upstream height/identity mapping is missing or inconsistent.`);
     const versions=[...registry(packet.upstream_snapshot?.character_assets),...registry(packet.asset_catalog?.characters)].filter(entry=>assetId(entry)===binding.assetId);
     for(const field of ['look_version','state_version']){
-      const known=new Set(versions.map(entry=>entry[field]).filter(Boolean));
+      const candidates=binding.look_version||binding.state_version?versions.flatMap(assetVersionRecords):versions;
+      const known=new Set(candidates.map(entry=>entry[field]).filter(Boolean));
       if(known.size||binding[field])expect(binding[field]&&known.has(binding[field]),`${actor.id}: ${field} is missing or differs from explicit upstream provenance.`);
     }
     expect(near(actor.height,binding.height_cm/100),`${actor.id}: scene height differs from the upstream centimetre value.`);
     if(binding.appearanceReference)await readFile(path.resolve(root,binding.appearanceReference));
   }
   checkRelatedAssets(scene,packet,liveState);
-  return {packet,file,intakeSha256:sha256(bytes),structuralOnly:true};
+  const transitions=checkTransitionContext(packet,liveState);
+  return {packet,file,intakeSha256:sha256(bytes),structuralOnly:true,transitions,diagnostics:packet.diagnostics||[]};
 }

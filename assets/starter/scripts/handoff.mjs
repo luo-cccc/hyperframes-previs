@@ -1,75 +1,111 @@
-import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
+import {mkdir,readFile,stat,open,unlink} from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { validateScene } from '../src/scene-data.js';
-import { checkUpstream,sha256 } from './check-upstream.mjs';
-import { sourceFingerprint } from './source-fingerprint.mjs';
-import { sourceContext } from './source-context.mjs';
+import {fileURLToPath} from 'node:url';
+import {validateScene} from '../src/scene-data.js';
+import {checkUpstream,sha256} from './check-upstream.mjs';
+import {sourceFingerprint} from './source-fingerprint.mjs';
+import {sourceContext} from './source-context.mjs';
 import {renderSceneText} from '../src/render-identity.js';
+import {writeAtomic} from './atomic-file.mjs';
+import {ADAPTER_VERSION} from './adapter-version.mjs';
+import {optionalJson,checkResult,scopedReview,boundaryEvidence,evaluateDeliveryGoal,revisionRequests} from './review-receipt.mjs';
 
-const root=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
-const destination=path.join(root,'handoff');
-async function optionalJson(file){
-  try{return JSON.parse(await readFile(file,'utf8'))}
-  catch(error){if(error.code==='ENOENT')return null;throw error}
-}
-const sceneBytes=await readFile(path.join(root,'scene.json'));
-const scene=JSON.parse(sceneBytes.toString('utf8'));
-const problems=validateScene(scene);if(problems.length)throw new Error(problems.join('\n'));
-const upstream=await checkUpstream(root,scene);
-const context=await sourceContext(root,upstream);
-let videoExists=false;
-try{videoExists=(await stat(path.join(root,'renders/previs.mp4'))).isFile()}
-catch(error){if(error.code!=='ENOENT')throw error}
-const receipt=await optionalJson(path.join(root,'renders/render-receipt.json'));
-const review=upstream?await optionalJson(path.join(root,'adapter-review.json')):null;
-const spatialReport=await optionalJson(path.join(root,'review/spatial-report.json'));
-const sceneHash=sha256(renderSceneText(scene)),fingerprint=await sourceFingerprint(root);
-const videoHash=videoExists?sha256(await readFile(path.join(root,'renders/previs.mp4'))):null;
-const spatialCurrent=Boolean(spatialReport?.render_identity==='PREVIS_RENDER_CONTENT_V2'&&spatialReport.scene_sha256===sceneHash&&spatialReport.render_inputs_sha256===fingerprint.sha256&&spatialReport.intake_sha256===(upstream?.intakeSha256||null));
-const spatial={status:spatialCurrent?spatialReport.status:'NOT_RUN_OR_STALE',scope:'SAMPLED_PROXY_GEOMETRY',report:spatialCurrent?'../review/spatial-report.json':null,...(spatialCurrent?{counts:spatialReport.counts,sampling:spatialReport.sampling}:{})};
-const fresh=Boolean(videoExists&&receipt?.render_status==='COMPLETED'&&receipt.render_identity==='PREVIS_RENDER_CONTENT_V2'&&
-  receipt.scene_sha256===sceneHash&&receipt.render_inputs_sha256===fingerprint.sha256&&
-  receipt.intake_sha256===(upstream?.intakeSha256||null)&&receipt.video_sha256===videoHash);
-const manifest={
-  schemaVersion:1,title:scene.title,referenceVideo:fresh?'../renders/previs.mp4':null,
-  videoStatus:fresh?'verified-render-current-inputs':videoExists?'unverified-or-stale':'not-rendered',
-  spec:{duration:scene.duration,width:scene.width,height:scene.height,fps:scene.fps},
-  coordinates:'metres, Y up, -Z forward',timeBasis:'SEGMENT',
-  actors:scene.actors.map(a=>({id:a.id,role:a.role,previsColor:a.color,...(scene.assetBindings?.find(b=>b.actorId===a.id)||{appearanceReference:null,referenceStatus:'unbound'})})),
-  sceneReference:null,shots:scene.shots,upstream:scene.upstream||null,sourceContext:context,spatial,
-  sourceReferenceBase:upstream?path.relative(destination,upstream.file).replaceAll(path.sep,'/'):null,
-  adaptationMap:scene.adaptationMap||null,
-  scope:'Camera, blocking and timing reference. Appearance and detailed performance require separately bound references.'
-};
-const quote=value=>'"'+String(value).replaceAll('"','""')+'"';
-const csv='\uFEFF'+[['id','start_s','end_s','duration_s','beat'],...scene.shots.map(s=>[s.id,s.start,s.end,s.end-s.start,s.beat])].map(row=>row.map(quote).join(',')).join('\r\n');
-const binding=scene.actors.map(a=>`- ${a.id}（${a.role}）：预演色标 ${a.color}；上游资产 ${scene.assetBindings?.find(b=>b.actorId===a.id)?.assetId||'未绑定'}。`).join('\n');
-const outputs=new Map([['shots.csv',csv]]);
-if(upstream){
-  outputs.set('prompts.md',upstream.packet.master.text);
-  outputs.set('reference-attachments.md',`# 三维预演参考附件\n\n正式段：${upstream.packet.formal_id}；母稿：${upstream.packet.prompt_version}；预算：${upstream.packet.budget_version}。\n\n${binding}\n\n预演视频只承载镜头、相对空间、动作时序与揭示边界。人物外观与场景质感继续按上游有效资产；不继承简化模型、审片控件或辅助线。prompts.md 是上游母稿的逐字副本，模型提交格式继续由上游对应模型适配处理。\n\n视频状态：${manifest.videoStatus}。素材图片存在、已读取、平台已接收和效果已验证分别登记；本地导出不代表已经提交下游生成模型。\n`);
-  outputs.set('adaptation-map.json',JSON.stringify(scene.adaptationMap,null,2)+'\n');
-  const evidence=typeof review?.evidence==='string'?review.evidence.trim():Array.isArray(review?.evidence)&&review.evidence.some(value=>typeof value==='string'&&value.trim());
-  const reviewCurrent=Boolean(fresh&&review?.schema_version==='PREVIS_REVIEW_V1'&&
-    ['CHECKED','PASS','FAIL'].includes(review.status)&&evidence&&
-    review.scene_sha256===sceneHash&&review.intake_sha256===upstream.intakeSha256&&
-    review.render_inputs_sha256===fingerprint.sha256&&review.video_sha256===videoHash);
-  const result={
-    ...(fresh?receipt:{render_status:manifest.videoStatus}),scope:'PREVIS_CAMERA_BLOCKING',adapter_version:'0.4.0',
-    formal_id:upstream.packet.formal_id,base_prompt_version:upstream.packet.prompt_version,budget_version:upstream.packet.budget_version,
-    source_time_basis:'SEGMENT',sources:upstream.packet.sources,sourceContext:context,structural_checks:'PASS',
-    semantic_review:reviewCurrent?review:'NOT_RUN',review_reuse_status:reviewCurrent?'CURRENT':review?'STALE_OR_INCOMPLETE':'NOT_RUN',
-    unimplemented:reviewCurrent?review.unimplemented||[]:['Detailed action, speech, audio and narrative semantics require actual scoped review.'],
-    upstream_revision_required:reviewCurrent&&typeof review.upstream_revision_required==='boolean'?review.upstream_revision_required:null,
-    spatial,final_model_media_review:'NOT_RUN',upstream_writes:false
+export async function createHandoff(root,{publish=true}={}){
+  root=path.resolve(root);
+  const destination=path.join(root,'handoff');
+  const sceneBytes=await readFile(path.join(root,'scene.json')),scene=JSON.parse(sceneBytes.toString('utf8'));
+  const problems=validateScene(scene);if(problems.length)throw new Error(problems.join('\n'));
+  const upstream=await checkUpstream(root,scene),context=await sourceContext(root,upstream);
+  let videoExists=false;
+  try{videoExists=(await stat(path.join(root,'renders/previs.mp4'))).isFile()}catch(error){if(error.code!=='ENOENT')throw error}
+  const [receipt,review,spatialReport,boundaryReport,goalInput]=await Promise.all([
+    'renders/render-receipt.json','adapter-review.json','review/spatial-report.json','review/boundary-report.json','delivery-goal.json'
+  ].map(file=>optionalJson(path.join(root,file))));
+  const sceneHash=sha256(renderSceneText(scene)),fingerprint=await sourceFingerprint(root);
+  const videoHash=videoExists?sha256(await readFile(path.join(root,'renders/previs.mp4'))):null;
+  const identity={scene_sha256:sceneHash,intake_sha256:upstream?.intakeSha256||null,render_inputs_sha256:fingerprint.sha256,video_sha256:videoHash};
+  const fresh=Boolean(videoExists&&receipt?.render_status==='COMPLETED'&&receipt.render_identity==='PREVIS_RENDER_CONTENT_V2'&&Object.entries(identity).every(([key,value])=>receipt[key]===value));
+  const videoStatus=fresh?'verified-render-current-inputs':videoExists?'unverified-or-stale':'not-rendered';
+  const spatialCurrent=Boolean(spatialReport?.render_identity==='PREVIS_RENDER_CONTENT_V2'&&['scene_sha256','render_inputs_sha256','intake_sha256'].every(key=>spatialReport[key]===identity[key]));
+  const spatial={status:spatialCurrent?spatialReport.status:'NOT_RUN_OR_STALE',scope:'SAMPLED_PROXY_GEOMETRY',report:spatialCurrent?'../review/spatial-report.json':null,...(spatialCurrent?{counts:spatialReport.counts,sampling:spatialReport.sampling}:{})};
+  const transitions=upstream?.transitions||{status:'NOT_DECLARED',reasons:[]};
+  const transitionsCurrent=transitions.status!=='STALE';
+  const boundary=await boundaryEvidence(root,boundaryReport,identity,{transitionsCurrent});
+  const reviewed=await scopedReview(root,review,identity,{fresh,transitionsCurrent:boundary.status==='CURRENT',boundaryCurrent:boundary.status==='CURRENT',boundaryIdentity:boundaryReport?.identity||null,goal:goalInput||scene.deliveryGoal||null});
+  const fileEvidence=async file=>({path:file,sha256:sha256(await readFile(path.join(root,file))),kind:'FILE'});
+  const checks={
+    source_structure:checkResult('PASS',upstream?'Selected upstream sources, formal/prompt/budget lineage, scene timing and actor/asset structure; no narrative acceptance.':'Explicit standalone demonstration scene structure; no upstream production authority.',[await fileEvidence('scene.json'),...(upstream?[await fileEvidence(path.relative(root,upstream.file))]:[])]),
+    text_alignment:checkResult('NOT_RUN','Narrative, exact dialogue and intended photography need actual scoped review.'),
+    render_specs:fresh?checkResult(receipt.media_metrics_status==='CHECKED'?'PASS':'NOT_RUN','Successful current MP4 dimensions, fps, duration and frame count; exact media metrics require ffprobe.',[await fileEvidence('renders/render-receipt.json')]):checkResult(videoExists?'STALE':'NOT_RUN','No current successful video is linked to these saved inputs.'),
+    spatial_proxy:checkResult(spatialCurrent?(spatialReport.status==='NO_ISSUES_OBSERVED'?'PASS':'CHECKED'):'NOT_RUN','Sampled proxy geometry only; no skeletal/pixel visibility or complete narrative acceptance.',spatialCurrent?[await fileEvidence('review/spatial-report.json')]:[],spatialCurrent?{warnings:spatialReport.counts?.issueGroups||0}:{}),
+    boundary_source:checkResult(boundary.status==='CURRENT'?'PASS':transitionsCurrent?(transitions.status==='CURRENT'?'PASS':'NOT_RUN'):'STALE',boundary.status==='CURRENT'?'All selected endpoint and transition dependencies were independently revalidated; unrelated connections do not affect this package.':transitionsCurrent?'Selected transition source freshness; no media acceptance.':'Transition context changed and no current selected endpoint package supersedes it.',[],{...(boundary.status!=='CURRENT'&&transitions.reasons?.length?{reason:transitions.reasons.join('; ')}:{})}),
+    boundary_extraction:boundary.checks.boundary_extraction||checkResult(boundary.status==='STALE'?'STALE':'NOT_RUN',boundary.reason||'No current actual boundary extraction. A conditional plan is not extracted media.'),
+    boundary_frame:checkResult('NOT_RUN','Selected retained in/out images need actual visual review.'),
+    boundary_motion:checkResult('NOT_RUN','Neighboring action phase, trajectory and speed need actual motion review.'),
+    audio:checkResult('NOT_RUN','No listening or audio continuity acceptance was performed by this exporter.'),
+    capability:checkResult('UNKNOWN','The target platform/mode capabilities require their own dated evidence.'),
+    inputs:checkResult('NOT_RUN','Actual platform inputs and their binding roles require scoped verification.'),
+    platform_submission:checkResult('NOT_RUN','No actual provider submission was performed by the local previs tool.'),
+    final_model:checkResult('NOT_RUN','Local proxy rendering does not establish final-model media quality.'),
+    ...reviewed.checks
   };
+  const goal=evaluateDeliveryGoal(goalInput||scene.deliveryGoal,checks);
+  const lineage={project_id:upstream?.packet.project_id||scene.id,formal_id:upstream?.packet.formal_id||null,prompt_version:upstream?.packet.prompt_version||null,budget_version:upstream?.packet.budget_version||null,...identity};
+  const revisions=revisionRequests(reviewed.findings,goal,lineage);
+  const legacyEvidence=typeof review?.evidence==='string'?review.evidence.trim():Array.isArray(review?.evidence)&&review.evidence.some(value=>typeof value==='string'&&value.trim());
+  const legacyCurrent=Boolean(fresh&&review?.schema_version==='PREVIS_REVIEW_V1'&&['CHECKED','PASS','FAIL'].includes(review.status)&&legacyEvidence&&Object.entries(identity).every(([key,value])=>review[key]===value));
+  const manifest={
+    schemaVersion:1,adapter_version:ADAPTER_VERSION,render_identity:'PREVIS_RENDER_CONTENT_V2',...identity,delivery_goal_configuration_sha256:sha256(JSON.stringify(goalInput||scene.deliveryGoal||null)),title:scene.title,referenceVideo:fresh?'../renders/previs.mp4':null,videoStatus,
+    spec:{duration:scene.duration,width:scene.width,height:scene.height,fps:scene.fps},coordinates:'metres, Y up, -Z forward',timeBasis:'SEGMENT',
+    actors:scene.actors.map(actor=>({id:actor.id,role:actor.role,previsColor:actor.color,...(scene.assetBindings?.find(binding=>binding.actorId===actor.id)||{appearanceReference:null,referenceStatus:'unbound'})})),
+    sceneReference:null,shots:scene.shots,upstream:scene.upstream||null,sourceContext:context,spatial,
+    sourceReferenceBase:upstream?path.relative(destination,upstream.file).replaceAll(path.sep,'/'):null,
+    adaptationMap:scene.adaptationMap||null,upstream_provenance:upstream?.packet.upstream_provenance||null,
+    transitions,boundary:{status:boundary.status,reason:boundary.reason,report:boundary.report?'../review/boundary-report.json':null,viewer:boundary.report?'../'+boundary.report.package_directory+'/index.html':null},
+    timeMapping:scene.timeMapping||null,checks,delivery_goal:goal,revision_requests:'revision-requests.json',
+    scope:'Camera, proxy action, relative space, timing and selected boundary reference. Appearance, sound and platform control retain their separate checks.'
+  };
+  const result={
+    ...(fresh?receipt:{render_status:videoStatus}),scope:'PREVIS_CAMERA_BLOCKING',adapter_version:ADAPTER_VERSION,
+    formal_id:lineage.formal_id,base_prompt_version:lineage.prompt_version,budget_version:lineage.budget_version,
+    source_time_basis:'SEGMENT',sources:upstream?.packet.sources||[],sourceContext:context,structural_checks:'PASS',...identity,
+    semantic_review:legacyCurrent?review:reviewed.checks.text_alignment||'NOT_RUN',review_reuse_status:legacyCurrent?'CURRENT':reviewed.status,
+    scoped_review:reviewed,checks,delivery_goal:goal,transitions,boundary:manifest.boundary,timeMapping:scene.timeMapping||null,
+    unimplemented:reviewed.status==='CURRENT'&&Array.isArray(review?.unimplemented)?review.unimplemented:legacyCurrent?review.unimplemented||[]:['Detailed action, original speech/audio and final-model performance retain their actual separate check status.'],
+    upstream_revision_required:revisions.requests.some(item=>item.route==='UPSTREAM_REVISION')?true:legacyCurrent&&typeof review.upstream_revision_required==='boolean'?review.upstream_revision_required:null,
+    revision_requests:revisions,spatial,final_model_media_review:checks.final_model.status,upstream_writes:false
+  };
+  const quote=value=>'"'+String(value).replaceAll('"','""')+'"';
+  const csv='\uFEFF'+[['id','start_s','end_s','duration_s','beat'],...scene.shots.map(shot=>[shot.id,shot.start,shot.end,shot.end-shot.start,shot.beat])].map(row=>row.map(quote).join(',')).join('\r\n');
+  const outputs=new Map([['shots.csv',csv],['checks.json',JSON.stringify({schema_version:'PREVIS_CHECKS_V1',...identity,checks,delivery_goal:goal},null,2)+'\n'],['revision-requests.json',JSON.stringify(revisions,null,2)+'\n'],['previs-receipt.json',JSON.stringify(result,null,2)+'\n']]);
+  const binding=scene.actors.map(actor=>'- '+actor.id+'（'+actor.role+'）：预演色标 '+actor.color+'；上游资产 '+(scene.assetBindings?.find(item=>item.actorId===actor.id)?.assetId||'未绑定')+'。').join('\n');
+  if(upstream){
+    outputs.set('prompts.md',upstream.packet.master.text);
+    outputs.set('reference-attachments.md','# 三维预演参考附件\n\n正式段：'+lineage.formal_id+'；母稿：'+lineage.prompt_version+'；预算：'+lineage.budget_version+'。\n\n'+binding+'\n\n预演承载已实现的机位、代理动作与空间，不继承占位外观或审片控件。prompts.md 保留上游母稿原文；素材、能力、声音及最终模型检查见 checks.json。\n\n视频状态：'+videoStatus+'。用户目标：'+goal.status+'。条件计划、参考包与真实提交分别记录；本工具没有推进上游覆盖。\n');
+    outputs.set('adaptation-map.json',JSON.stringify(scene.adaptationMap,null,2)+'\n');
+    outputs.set('transition-map.json',JSON.stringify({schema_version:'PREVIS_TRANSITION_MAP_V1',source:upstream.packet.transition_context||null,freshness:transitions,implementation:scene.transitionMap||[],upstream_writes:false},null,2)+'\n');
+  }else outputs.set('demo-notes.md','# '+scene.title+' · 运行时演示\n\n此工程没有绑定真实上游正式段，不能作为正式母稿或平台提交稿。\n\n'+binding+'\n\n'+scene.shots.map(shot=>'- '+shot.id+': '+shot.start+'–'+shot.end+' 秒；'+shot.beat).join('\n')+'\n');
+  goal.delivered_artifacts=[...outputs.keys(),'manifest.json'];
+  // Refresh serialized goal-bearing outputs after the actual file list is known.
+  outputs.set('checks.json',JSON.stringify({schema_version:'PREVIS_CHECKS_V1',...identity,checks,delivery_goal:goal},null,2)+'\n');
   outputs.set('previs-receipt.json',JSON.stringify(result,null,2)+'\n');
-}else{
-  outputs.set('demo-notes.md',`# ${scene.title} · 运行时演示\n\n此工程没有绑定上游正式段，不能作为正式母稿或模型提交稿。\n\n${binding}\n\n`+scene.shots.map(s=>`- ${s.id}: ${s.start}–${s.end} 秒；${s.beat}`).join('\n')+'\n');
+  outputs.set('manifest.json',JSON.stringify(manifest,null,2)+'\n');
+  const now=JSON.parse(await readFile(path.join(root,'scene.json'),'utf8'));
+  if(renderSceneText(now)!==renderSceneText(scene)||(await sourceFingerprint(root)).sha256!==fingerprint.sha256)throw new Error('Saved inputs changed during handoff; no previous handoff was replaced.');
+  await checkUpstream(root,now);
+  if(!publish)return {destination,videoStatus,goal:goal.status,checks,result,manifest};
+  await mkdir(destination,{recursive:true});
+  const lockPath=path.join(root,'.previs-handoff.lock'),lock=await open(lockPath,'wx'),previous=new Map(),published=[];
+  try{
+    for(const [name,contents] of outputs){const file=path.join(destination,name);try{previous.set(name,await readFile(file))}catch(error){if(error.code!=='ENOENT')throw error;previous.set(name,null)}await writeAtomic(file,contents);published.push(name)}
+  }catch(error){
+    for(const name of published.reverse()){const file=path.join(destination,name),before=previous.get(name);if(before===null){try{await unlink(file)}catch(cleanup){if(cleanup.code!=='ENOENT')throw cleanup}}else await writeAtomic(file,before)}
+    throw error;
+  }finally{await lock.close();await unlink(lockPath)}
+  return {destination,videoStatus,goal:goal.status,checks,result,manifest};
 }
-outputs.set('manifest.json',JSON.stringify(manifest,null,2)+'\n');
-// Resolve and validate all inputs before touching a previous handoff bundle.
-await mkdir(destination,{recursive:true});
-for(const [name,contents] of outputs)await writeFile(path.join(destination,name),contents,'utf8');
-console.log(`Handoff written to ${destination}; video ${manifest.videoStatus}; upstream writes false.`);
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+  const root=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
+  const result=await createHandoff(root);
+  console.log('Handoff written to '+result.destination+'; video '+result.videoStatus+'; goal '+result.goal+'; upstream writes false.');
+}

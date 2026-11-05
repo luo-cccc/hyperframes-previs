@@ -1,0 +1,24 @@
+[
+  {
+    "formal_id": "FORMAL_1",
+    "prompt_version": "P2",
+    "budget_version": "B2",
+    "time_basis": "SEGMENT",
+    "target_max_s": 12,
+    "duration_s": 8,
+    "shots": [
+      {
+        "id": "S01",
+        "start_s": 0,
+        "end_s": 4,
+        "duration_s": 4
+      },
+      {
+        "id": "S02",
+        "start_s": 4,
+        "end_s": 8,
+        "duration_s": 4
+      }
+    ]
+  }
+]

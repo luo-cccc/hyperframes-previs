@@ -22,7 +22,7 @@ export async function bundleProject({project,out}){
   project=path.resolve(project);out=path.resolve(out);
   expect(!await exists(out),`output already exists: ${out}`);
   expect(!inside(project,out),'output must be outside the source project.');
-  for(const lock of ['.previs-save.lock','.previs-render.lock'])expect(!await exists(path.join(project,lock)),`project is locked (${lock}); wait for the operation to finish before bundling.`);
+  for(const lock of ['.previs-save.lock','.previs-render.lock','.previs-handoff.lock','.previs-boundary.lock'])expect(!await exists(path.join(project,lock)),`project is locked (${lock}); wait for the operation to finish before bundling.`);
   const sceneFile=path.join(project,'scene.json'),sceneBytes=await readFile(sceneFile),scene=JSON.parse(sceneBytes.toString('utf8'));
   expect(scene.upstream,'this helper requires a bound upstream-adapter project.');
   const intakeReference=relativeReference(scene.upstream.intake,'scene.upstream.intake');

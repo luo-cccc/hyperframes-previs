@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 import re
 import sys
+sys.dont_write_bytecode = True
+from upstream_contract import (ADAPTER_VERSION, STATE_PROFILE, collect_transition_context,
+                               resolve_script_reference, scope_diagnostics, upstream_provenance)
 
 
 def reject_constant(value):
@@ -83,8 +86,9 @@ def section_text(text, fragment):
     raise ValueError(f"Cannot unambiguously locate Markdown fragment #{fragment}; use a dedicated mother-script file.")
 
 
-def state_scope(state, formal_id):
+def state_scope(state, formal_id, profile=STATE_PROFILE):
     """Only facts that can invalidate this formal segment, not workflow progress."""
+    require(profile in ("SCOPED_STATE_V2", STATE_PROFILE), "Unsupported scoped state validation profile.")
     rows = [row for row in state.get("coverage_ledger", []) if row.get("formal_id") == formal_id]
     require(len(rows) == 1 and rows[0].get("status") == "DONE", "Target no longer has one current DONE coverage record.")
     coverage = rows[0]
@@ -105,6 +109,8 @@ def state_scope(state, formal_id):
     steps = [row for row in state.get("step_ledger", []) if row.get("step_id") == formal_id and not row.get("request_id") and row.get("status") in ("DONE", "REUSED") and row.get("prompt_version", coverage["prompt_version"]) == coverage["prompt_version"]]
     require(steps, "Target has no matching completed step evidence.")
     for item in state.get("blocking_items", []):
+        if profile == STATE_PROFILE and item.get("request_id") and formal_id not in item.get("blocks", []):
+            continue
         blocks = item.get("blocks", [])
         require(formal_id not in blocks and "*" not in blocks and item.get("step_id") != formal_id, "A current blocker applies to this target.")
     require(state.get("edit_lock") not in (formal_id, coverage.get("segment_id")) or state.get("edit_lock") in (None, "NONE"), "Target is edit-locked.")
@@ -118,16 +124,16 @@ def state_scope(state, formal_id):
         require(item.get("status") == "CONFIRMED" and item.get("decision_ref") and item.get("selected") is not None, f"{key} is no longer confirmed.")
         settings[key] = pick(item, ("selected", "status", "decision_ref"))
     return {
-        "profile": "SCOPED_STATE_V2", "project_id": state.get("project_id"),
+        "profile": profile, "project_id": state.get("project_id"),
         "state_version": state.get("state_version"), "workflow_schema": state.get("workflow_schema"),
         "production_settings": settings, "source_script_ref": script,
-        "coverage": {**pick(coverage, ("formal_id", "episode_id", "scene_id", "segment_id", "prompt_version", "budget_version", "source_script_version", "chains", "start_cursor", "end_cursor", "start_anchor", "end_anchor", "start_state", "end_state", "delivery_ref", "status")), "TEXT": pick(text_check, ("status", "evidence"))},
+        "coverage": {**pick(coverage, ("formal_id", "episode_id", "scene_id", "segment_id", "prompt_version", "budget_version", "source_script_version", "chains", "start_cursor", "end_cursor", "start_anchor", "end_anchor", "start_state", "end_state", "delivery_ref", "status")), "TEXT": pick(text_check, ("status", "scope", "evidence") if profile == STATE_PROFILE else ("status", "evidence"))},
         "prompt": pick(prompt, ("formal_id", "prompt_version", "budget_version", "budget_status", "budget_ref", "delivery_ref", "status")),
         "steps": [pick(row, ("step_id", "status", "prompt_version", "delivery_ref")) for row in steps]
     }
 
 
-def prepare(state_path, budget_path, formal_id, out_path, additional_sources=()):
+def prepare(state_path, budget_path, formal_id, out_path, additional_sources=(), upstream_skill_dir=None):
     state = read_json(state_path)
     require(isinstance(state, dict), "State must be an explicit JSON object; free text requires manual intake.")
     schemas = {"1.8": "SINGLE_TEXT_CONFIRMED_ASSET_STAGES_V3", "1.9": "SINGLE_TEXT_CONFIRMED_ASSET_STAGES_V4"}
@@ -151,6 +157,7 @@ def prepare(state_path, budget_path, formal_id, out_path, additional_sources=())
     coverage = [row for row in state.get("coverage_ledger", []) if row.get("formal_id") == formal_id]
     require(len(coverage) == 1 and coverage[0].get("status") == "DONE", "Target needs one current DONE coverage record; a plan or invalid/draft mother script is insufficient.")
     coverage = coverage[0]
+    script_file, script_fragment, resolved_script = resolve_script_reference(state.get("source_script_ref"), base, local_ref)
     scoped_state = state_scope(state, formal_id)
     records = [row for row in state.get("prompt_versions", []) if row.get("formal_id") == formal_id and row.get("prompt_version") == coverage.get("prompt_version")]
     require(len(records) == 1 and records[0].get("status") == "DONE", "Effective mother-script version must match the current coverage record.")
@@ -164,6 +171,8 @@ def prepare(state_path, budget_path, formal_id, out_path, additional_sources=())
     lock = state.get("edit_lock")
     require(lock not in (formal_id, coverage.get("segment_id")) or lock in (None, "NONE"), "This target is currently edit-locked.")
     for item in state.get("blocking_items", []):
+        if item.get("request_id") and formal_id not in item.get("blocks", []):
+            continue  # A request wildcard does not include an explicitly blocked formal.
         blocks = item.get("blocks", [])
         require(formal_id not in blocks and "*" not in blocks and item.get("step_id") != formal_id, f"A current blocker applies to {formal_id}: {item.get('gap', item)}")
     budgets = read_json(budget_path)
@@ -227,9 +236,6 @@ def prepare(state_path, budget_path, formal_id, out_path, additional_sources=())
     add_source("master", master_file, fragment=fragment)
     evidence, evidence_fragment = local_ref(check["evidence"], base)
     add_source("text_evidence", evidence, fragment=evidence_fragment)
-    script = state.get("source_script_ref")
-    script_ref = script.get("location") if isinstance(script, dict) else script
-    script_file, script_fragment = local_ref(script_ref, base)
     add_source("source_script", script_file, fragment=script_fragment)
     for item in additional_sources:
         role, separator, reference = item.partition('=')
@@ -239,11 +245,14 @@ def prepare(state_path, budget_path, formal_id, out_path, additional_sources=())
         add_source(role, extra_file)
     snapshot_keys = ("state_version", "workflow_schema", "source_script_ref", "project_decisions", "character_profiles", "character_assets", "scene_assets", "prop_assets", "characters_state", "environment_state", "weapons_props_state", "viewing_state", "ongoing_effects_state", "last_frame_snapshot")
     return {
-        "schema_version": "STORYBOARD_PREVIS_ADAPTER_V1", "adapter_version": "0.4.0", "input_mode": "STATE_JSON",
+        "schema_version": "STORYBOARD_PREVIS_ADAPTER_V1", "adapter_version": ADAPTER_VERSION, "input_mode": "STATE_JSON",
         "project_id": state["project_id"], "formal_id": formal_id, "prompt_version": prompt["prompt_version"], "budget_version": prompt["budget_version"],
         "episode_id": coverage.get("episode_id"), "scene_id": coverage.get("scene_id"),
         "production_settings": settings, "budget": budget, "master": {"ref": prompt["delivery_ref"], "text": master, "text_sha256": hashlib.sha256(master.encode('utf-8')).hexdigest()},
-        "sources": sources, "state_scope": scoped_state, "validation_profile": "SCOPED_STATE_V2",
+        "sources": sources, "state_scope": scoped_state, "validation_profile": STATE_PROFILE,
+        "resolved_source_script_ref": resolved_script, "diagnostics": scope_diagnostics(state, formal_id),
+        "transition_context": collect_transition_context(state, formal_id, prompt["prompt_version"], sources[0]["path"]),
+        "upstream_provenance": upstream_provenance(upstream_skill_dir),
         "upstream_snapshot": {**{k: state.get(k) for k in snapshot_keys}, "coverage": coverage},
         "semantic_review": "NOT_RUN", "upstream_writes": False,
         "scope": "Read-only structural intake; does not verify narrative semantics, speech completeness or authenticity of decisions."
@@ -257,11 +266,12 @@ def main():
     parser.add_argument("--formal-id", required=True)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument('--source', action='append', default=[], help='Explicit target-only extra evidence, e.g. asset_prompt=assets.md; relative to the upstream state directory.')
+    parser.add_argument("--upstream-skill-dir", type=Path, help="Actual script-to-storyboard-prompts package directory; provenance metadata only, UNKNOWN when omitted.")
     args = parser.parse_args()
     try:
         out = args.out.resolve()
         require(not out.exists(), "Intake output already exists; use a new adapter revision rather than silently overwriting provenance.")
-        packet = prepare(args.state.resolve(), args.budget.resolve(), args.formal_id, out, args.source)
+        packet = prepare(args.state.resolve(), args.budget.resolve(), args.formal_id, out, args.source, args.upstream_skill_dir)
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(packet, stream, ensure_ascii=False, indent=2, allow_nan=False)

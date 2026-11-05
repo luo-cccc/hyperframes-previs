@@ -1,6 +1,6 @@
 # HyperFrames 分镜预演适配 Skill
 
-当前版本：**0.4.0**。技能入口：[SKILL.md](SKILL.md)。
+当前版本：**0.5.0**。技能入口：[SKILL.md](SKILL.md)。
 
 接收 [script-to-storyboard-prompts](https://github.com/luo-cccc/script-to-storyboard-prompts) 已交付的有效正式母稿、同版预算、人物/场景/道具资产与首尾状态，制作可编辑的 Three.js 三维预演，再通过 HyperFrames 逐帧导出参考视频。
 
@@ -13,6 +13,9 @@
 - 服务端镜头/走位锁、目标级撤销、版本冲突保护与有限编辑历史。
 - 按导出帧抽查代理相交、边界、显式障碍及明确要求入画的角色。
 - 干净 MP4、原母稿副本、参考附加说明、独立反馈包和可移动证据工程。
+- 上游 0.4.1 的路径别名、TEXT 检查范围和按正式段选择的转场依赖；旧 V2 工程按原语义复核。
+- 铰链门动作相位、手部代理接触、相机关键点、三时钟映射及实际视频接点证据包。
+- 分项 status/scope/evidence、目标完成状态与本地/上游/平台返修归责。
 
 画面批注的待处理、已处理与附证据验收分开；旧来源自动标过期。代理检查没有警告不等于完整媒体验收，预演也不保证下游模型精确跟随。
 
@@ -54,11 +57,14 @@ node scripts/create_project.mjs /path/to/demo --demo
 | 场景字段与时钟 | [scene-contract.md](references/scene-contract.md) |
 | 渲染、来源指纹与失败处理 | [runtime.md](references/runtime.md) |
 | 返回视频模型的参考包 | [handoff.md](references/handoff.md) |
+| 接点、动作相位与时钟 | [boundary-previs.md](references/boundary-previs.md) |
+| 分项回执与返修归责 | [scoped-receipts.md](references/scoped-receipts.md) |
 | 可移动工程与冻结证据 | [portable-bundle.md](references/portable-bundle.md) |
 | 采纳的设计与暂缓能力 | [adopted-designs.md](references/adopted-designs.md) |
 | 用户使用回归场景 | [user-scenarios.md](evals/user-scenarios.md) |
 | 60 fps 实测记录 | [60fps-smoke-2026-11-05.md](evals/60fps-smoke-2026-11-05.md) |
 | 用户模拟与修复回归 | [user-simulation-2026-11-06.md](evals/user-simulation-2026-11-06.md) |
+| 0.5.0 三批落地验收 | [0.5.0-three-batch-acceptance.md](evals/0.5.0-three-batch-acceptance.md) |
 
 ## 运行与验证边界
 
@@ -67,3 +73,13 @@ node scripts/create_project.mjs /path/to/demo --demo
 此前已完成隔离用户模拟、锁/撤销/批注/来源回归，以及真实 12 秒、1280×720、24fps、288 帧的 HyperFrames 导出。默认值现已调整为 60 fps，并于 2026-11-05 完成同规格 12 秒、60 fps、720 帧的实际导出、完整解码、帧数探测、切点及非顺序跳转检查。仓库中的 `evals/user-scenarios.md` 是回归场景说明，不应描述为已包含完整自动化测试套件。
 
 示例使用色标占位人物与基础步态。声音、口型、复杂动作和最终视频模型生成未在该示例中验证。捕获 PNG 标为 `USER_CAPTURE_UNVERIFIED`，服务检查文件完整性与来源引用，不声称已重渲染比较像素。
+
+## 回归检查
+
+```text
+node scripts/check_project.mjs --report outputs/checks.json
+```
+
+该命令运行仓库内 Node/Python 契约测试，需要 Node.js、Python 以及媒体测试使用的 FFmpeg/ffprobe。真实浏览器使用、实际视频和用户输入语义仍按独立记录核验。接点联合演示：`node scripts/create_dutyroom_example.mjs outputs/dutyroom-demo`，生成独立的 F1/F2 测试工程。
+
+0.5.0 已完成冻结源码的 **206 项回归（0 失败、0 跳过）**、两段 60 fps 实际导出与独立用户模拟；详细范围、初始失败闭环、声音缺项及测试隔离偏差见上述三批验收记录，不代表最终平台媒体已生成或通过。

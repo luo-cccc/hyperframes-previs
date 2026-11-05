@@ -7,6 +7,8 @@ import {createAnnotation,listAnnotations,updateAnnotation,exportFeedback} from '
 import {auditScene} from '../src/spatial-audit.js';
 import {checkUpstream,sha256} from './check-upstream.mjs';
 import {sourceFingerprint} from './source-fingerprint.mjs';
+import {createHandoff} from './handoff.mjs';
+import {optionalJson} from './review-receipt.mjs';
 
 const root=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
 const port=Number(process.env.PREVIS_PORT||4173);
@@ -38,6 +40,21 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'&&url.pathname==='/__previs/annotations'){json(await createAnnotation(root,await bodyJson(8*1024*1024)));return}
     if(req.method==='POST'&&url.pathname==='/__previs/annotations/update'){json(await updateAnnotation(root,await bodyJson()));return}
     if(req.method==='POST'&&url.pathname==='/__previs/feedback/export'){json(await exportFeedback(root));return}
+    if(req.method==='GET'&&url.pathname==='/__previs/delivery'){
+      const published=await optionalJson(path.join(root,'handoff/manifest.json'));
+      if(!published){json({available:false});return}
+      const live=await createHandoff(root,{publish:false}),manifest=live.manifest;
+      const current=published.scene_sha256===manifest.scene_sha256&&published.render_inputs_sha256===manifest.render_inputs_sha256&&published.intake_sha256===manifest.intake_sha256&&published.video_sha256===manifest.video_sha256&&published.delivery_goal_configuration_sha256===manifest.delivery_goal_configuration_sha256&&JSON.stringify(published.checks)===JSON.stringify(manifest.checks)&&JSON.stringify(published.delivery_goal)===JSON.stringify(manifest.delivery_goal);
+      json({available:true,current,videoStatus:manifest.videoStatus,goal:manifest.delivery_goal,checks:manifest.checks,boundary:manifest.boundary});return;
+    }
+    if(req.method==='POST'&&url.pathname==='/__previs/handoff'){
+      await bodyJson();const result=await createHandoff(root);json({saved:true,videoStatus:result.videoStatus,goal:result.manifest.delivery_goal});return;
+    }
+    if(req.method==='POST'&&url.pathname==='/__previs/boundary'){
+      await bodyJson();const {exportBoundaryPack}=await import('./boundary-pack.mjs');
+      const plan=await optionalJson(path.join(root,'boundary-plan.json'));
+      const result=await exportBoundaryPack({project:root,...(plan?{plan:path.join(root,'boundary-plan.json')}:{})});json(result);return;
+    }
     if(req.method==='GET'&&url.pathname==='/__previs/spatial'){
       const current=await readProject(root);json({...auditScene(current.scene),scene_revision:current.revision,scope_note:'Saved proxy geometry only. Visual/semantic media review is separate.'});return;
     }

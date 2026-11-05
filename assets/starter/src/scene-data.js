@@ -1,26 +1,31 @@
+import {validateActionData,clamp,smooth,lerp,lerpVector} from './action-data.js';
+import {validateTimeMapping} from './time-mapping.js';
+export {clamp,smooth,lerp,lerpVector,samplePath} from './action-data.js';
+
 export function validateScene(s) {
   const errors=[];
   const finite=v=>typeof v==='number'&&Number.isFinite(v);
   const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
   const vector=v=>Array.isArray(v)&&v.length===3&&v.every(finite);
   const expect=(ok,message)=>{if(!ok)errors.push(message)};
-  const onFrame=t=>finite(t)&&finite(s.fps)&&Math.abs(t*s.fps-Math.round(t*s.fps))<1e-5;
   if(!object(s))return ['Scene must be a JSON object.'];
+  const onFrame=t=>finite(t)&&finite(s.fps)&&Math.abs(t*s.fps-Math.round(t*s.fps))<1e-5;
   expect(s.schemaVersion===1,'schemaVersion must be 1.');
   expect(typeof s.id==='string'&&/^[a-z0-9-]+$/.test(s.id),'id must be a lowercase slug string.');
   expect(finite(s.duration)&&s.duration>0,'duration must be positive.');
   for(const key of ['width','height'])expect(Number.isInteger(s[key])&&s[key]>0&&s[key]%2===0,`${key} must be a positive even integer for H.264 yuv420p export.`);
   expect(finite(s.fps)&&s.fps>=1&&s.fps<=240,'fps must be between 1 and 240.');
-  if(finite(s.duration)&&finite(s.fps))expect(onFrame(s.duration),'duration must contain a whole number of frames; choose an exact fps or explicitly implement a technical time mapping.');
+  if(finite(s.duration)&&finite(s.fps))expect(onFrame(s.duration),'duration must contain a whole number of frames; choose an exact fps. A time mapping records clocks and never rounds the budget.');
   const env=object(s.environment)?s.environment:{};
   expect(object(s.environment),'environment must be an object.');
-  expect(env.type==='corridor','This starter supports environment.type=corridor; implement new geometry for other types.');
+  expect(['corridor','dutyroom'].includes(env.type),'Supported environment.type values are corridor and dutyroom.');
   for(const k of ['width','height','length'])expect(finite(env[k])&&env[k]>0,`environment.${k} must be positive.`);
-  expect(finite(env.doorZ),'environment.doorZ must be finite.');
-  if(s.door!==null&&s.door!==undefined){
-    expect(object(s.door),'door must be an object or null.');
-    if(object(s.door))expect(finite(s.door.openStart)&&finite(s.door.openEnd)&&s.door.openStart>=0&&s.door.openEnd>s.door.openStart&&s.door.openEnd<=s.duration,'Door event must be ordered and inside the timeline.');
+  if(env.type==='corridor')expect(finite(env.doorZ),'environment.doorZ must be finite.');
+  if(env.type==='dutyroom'){
+    expect(vector(env.floorCenter),'Dutyroom environment.floorCenter must be finite world XYZ metres (the centre of the floor).');
+    expect(s.door===null||s.door===undefined||s.door?.type==='hinged-door','Dutyroom doors must explicitly use type=hinged-door.');
   }
+  errors.push(...validateActionData(s),...validateTimeMapping(s));
   const actors=Array.isArray(s.actors)?s.actors:[];
   expect(Array.isArray(s.actors),'actors must be an explicit array; an empty array is valid for a no-character shot.');
   const actorIds=new Set();
@@ -49,52 +54,50 @@ export function validateScene(s) {
     expect(typeof shot.id==='string'&&shot.id.length>0&&!shotIds.has(shot.id),'Shot IDs must be nonempty and unique.');shotIds.add(shot.id);
     expect(finite(shot.start)&&finite(shot.end)&&shot.end>shot.start,`${label}: invalid time range.`);
     if(finite(shot.start)&&finite(end))expect(Math.abs(shot.start-end)<1e-6,`${label}: gap or overlap before shot.`);
-    if(finite(shot.start)&&finite(s.fps))expect(onFrame(shot.start),`${label}: start ${shot.start}s is not on the ${s.fps}fps frame grid; choose an exact fps or explicitly implement a time mapping.`);
-    if(finite(shot.end)&&finite(s.fps))expect(onFrame(shot.end),`${label}: end ${shot.end}s is not on the ${s.fps}fps frame grid; choose an exact fps or explicitly implement a time mapping.`);
+    if(finite(shot.start)&&finite(s.fps))expect(onFrame(shot.start),`${label}: start ${shot.start}s is not on the ${s.fps}fps frame grid; choose an exact fps.`);
+    if(finite(shot.end)&&finite(s.fps))expect(onFrame(shot.end),`${label}: end ${shot.end}s is not on the ${s.fps}fps frame grid; choose an exact fps.`);
     end=shot.end;
     const camera=object(shot.camera)?shot.camera:{};
     expect(object(shot.camera),`${label}: camera must be an object.`);
-    for(const name of ['from','to']){
-      const c=camera[name];
-      expect(object(c)&&vector(c.position)&&vector(c.target)&&finite(c.fov)&&c.fov>1&&c.fov<150,`${label}: invalid ${name} camera.`);
+    const poses=[];
+    const validPose=c=>object(c)&&vector(c.position)&&vector(c.target)&&finite(c.fov)&&c.fov>1&&c.fov<150;
+    if(camera.keys!==undefined){
+      expect(camera.from===undefined&&camera.to===undefined,`${label}: choose camera.keys or from/to, not both. A rig replacement must remove keys explicitly.`);
+      expect(Array.isArray(camera.keys)&&camera.keys.length>=2,`${label}: camera.keys needs at least two keys.`);
+      if(Array.isArray(camera.keys)&&camera.keys.length){
+        expect(camera.keys[0]?.t===shot.start&&camera.keys.at(-1)?.t===shot.end,`${label}: camera.keys must cover the shot's exact [start,end] in segment-local absolute seconds.`);
+        camera.keys.forEach((key,i)=>{
+          expect(validPose(key)&&finite(key.t)&&key.t>=shot.start&&key.t<=shot.end,`${label}: invalid camera key ${i}.`);
+          if(i)expect(finite(camera.keys[i-1]?.t)&&key?.t>camera.keys[i-1].t,`${label}: camera key times must strictly increase.`);
+          poses.push(key);
+        });
+      }
+      if(camera.interpolation!==undefined)expect(['linear','smooth'].includes(camera.interpolation),`${label}: key interpolation must be linear or smooth.`);
+    }else{
+      expect(camera.interpolation===undefined,`${label}: interpolation is only configurable for camera.keys; legacy from/to uses smooth easing.`);
+      for(const name of ['from','to']){expect(validPose(camera[name]),`${label}: invalid ${name} camera.`);poses.push(camera[name])}
     }
     const offset=camera.offset;
     expect(object(offset)&&vector(offset.position)&&vector(offset.target)&&finite(offset.fov),`${label}: invalid camera offset.`);
-    if(object(offset)&&finite(offset.fov))for(const name of ['from','to']){
-      const c=camera[name];if(object(c)&&finite(c.fov))expect(c.fov+offset.fov>1&&c.fov+offset.fov<150,`${label}: effective FOV is out of range.`);
-    }
+    if(object(offset)&&finite(offset.fov))for(const pose of poses)if(object(pose)&&finite(pose.fov))expect(pose.fov+offset.fov>1&&pose.fov+offset.fov<150,`${label}: effective FOV is out of range.`);
   });
   expect(finite(end)&&finite(s.duration)&&Math.abs(end-s.duration)<1e-6,'Shots must cover exactly the declared duration.');
   return errors;
 }
 
-export const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
-export const smooth=v=>{v=clamp(v);return v*v*(3-2*v)};
-export const lerp=(a,b,v)=>a+(b-a)*v;
-export const lerpVector=(a,b,v)=>a.map((n,i)=>lerp(n,b[i],v));
-
-export function samplePath(keys,t){
-  if(!Array.isArray(keys)||keys.length<2)throw new Error('samplePath requires at least two validated path keys.');
-  let distance=0,heading=0;
-  for(let i=1;i<keys.length;i++){
-    const a=keys[i-1],b=keys[i];
-    const delta=b.position.map((v,j)=>v-a.position[j]);
-    const length=Math.hypot(...delta),horizontal=Math.hypot(delta[0],delta[2]);
-    if(t>=a.t&&horizontal>.001)heading=Math.atan2(-delta[0],-delta[2]);
-    if(t<=b.t||i===keys.length-1){
-      const u=clamp((t-a.t)/(b.t-a.t));
-      const velocity=delta.map(v=>v/(b.t-a.t));
-      const moved=(left,right)=>Math.hypot(...right.position.map((v,j)=>v-left.position[j]))>.001;
-      const starts=i===1||!moved(keys[i-2],a),ends=i===keys.length-1||!moved(b,keys[i+1]);
-      const envelope=(starts?smooth((t-a.t)/.22):1)*(ends?smooth((b.t-t)/.22):1);
-      return {position:lerpVector(a.position,b.position,u),distance:distance+length*u,velocity,heading,walking:Math.min(1,length/(b.t-a.t))*envelope};
-    }
-    distance+=length;
-  }
+/** The same floor-centred box is used by builders and the sampled spatial audit. */
+export function stageBounds(scene){
+  const env=scene.environment,center=env.type==='dutyroom'?env.floorCenter:[0,0,-1];
+  return {min:[center[0]-env.width/2,center[1],center[2]-env.length/2],max:[center[0]+env.width/2,center[1]+env.height,center[2]+env.length/2],basis:env.type==='dutyroom'?'DUTYROOM_FLOOR_CENTER':'CORRIDOR_CENTER_Z_MINUS_ONE'};
 }
 
 export function sampleCamera(shot,t){
-  const u=smooth((t-shot.start)/(shot.end-shot.start));
-  const a=shot.camera.from,b=shot.camera.to,o=shot.camera.offset;
+  let a,b,u;
+  if(shot.camera.keys){
+    const keys=shot.camera.keys,index=keys.findIndex(key=>key.t>=t);
+    if(index<=0){a=b=keys[index===0?0:keys.length-1];u=0}
+    else{a=keys[index-1];b=keys[index];u=clamp((t-a.t)/(b.t-a.t));if(shot.camera.interpolation==='smooth')u=smooth(u)}
+  }else{a=shot.camera.from;b=shot.camera.to;u=smooth((t-shot.start)/(shot.end-shot.start))}
+  const o=shot.camera.offset;
   return {position:lerpVector(a.position,b.position,u).map((v,i)=>v+o.position[i]),target:lerpVector(a.target,b.target,u).map((v,i)=>v+o.target[i]),fov:lerp(a.fov,b.fov,u)+o.fov};
 }
