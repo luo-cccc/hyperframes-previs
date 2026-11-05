@@ -1,5 +1,6 @@
-import {mkdir,readFile,open,unlink,writeFile,rename} from 'node:fs/promises';
+import {mkdir,readFile,open,unlink,writeFile,rename,stat} from 'node:fs/promises';
 import path from 'node:path';
+import {isDeepStrictEqual} from 'node:util';
 import {randomUUID} from 'node:crypto';
 import {inflateSync} from 'node:zlib';
 import {readProject,projectError} from './project-store.mjs';
@@ -211,6 +212,53 @@ export async function updateAnnotation(root,request){
 function quoteText(value){return String(value).replace(/\r\n?/g,'\n').split('\n').map(line=>'> '+line).join('\n')}
 const code=value=>'`'+String(value).replaceAll('`','\\`').replace(/[\r\n]/g,' ')+'`';
 
+const packageChanged=message=>fail(409,'FEEDBACK_PACKAGE_CHANGED',message);
+
+async function readFeedbackManifest(directory){
+  let bytes;
+  try{bytes=await readFile(path.join(directory,'package-manifest.json'))}
+  catch(error){
+    if(error.code!=='ENOENT')throw error;
+    try{await stat(directory)}catch(missing){if(missing.code==='ENOENT')return null;throw missing}
+    packageChanged('The previous feedback package manifest is missing. Preserve the package and restore/review it before exporting again.');
+  }
+  let prior;try{prior=JSON.parse(bytes.toString('utf8'))}catch{packageChanged('The previous feedback package manifest is not valid JSON. Preserve it and review before exporting again.')}
+  const created=typeof prior?.created_at==='string'?Date.parse(prior.created_at):NaN;
+  if(!prior||Array.isArray(prior)||!Number.isFinite(created)||new Date(created).toISOString()!==prior.created_at)
+    packageChanged('The previous feedback package manifest has no valid frozen export timestamp. Preserve it and review before exporting again.');
+  return prior;
+}
+
+async function prepareFeedbackPackage(root,data,markdown,createdAt){
+  const portable=structuredClone(data),files=new Map(),missing=[];
+  portable.generated_at=createdAt;
+  const frozenMarkdown=markdown.replace('导出时间：'+data.generated_at,'导出时间：'+createdAt);
+  for(const item of portable.annotations){
+    item.original_png_ref=item.png_ref;
+    if(item.capture_integrity==='AVAILABLE'){
+      const bytes=await readFile(path.join(root,item.png_ref));
+      if(sha256(bytes)!==item.png_sha256)fail(409,'CAPTURE_INTEGRITY_MISMATCH','Capture changed while building the portable feedback package. Retry.');
+      item.png_ref='frames/'+item.png_sha256+'.png';files.set(item.png_ref,bytes);
+    }else{missing.push({annotationId:item.id,original_png_ref:item.png_ref,status:item.capture_integrity});item.png_ref=null}
+  }
+  const packageMarkdown=frozenMarkdown.replaceAll('../review/frames/','frames/')+'\n交付说明：本目录包含可用的原始PNG与反馈数据；原始引用保留在feedback.json。损坏或缺失图像明确列在manifest，不冒充已携带。\n\n'+portable.annotations.filter(item=>item.png_ref).map(item=>'### 捕获 '+item.id+'\n\n![批注对应原始画面]('+item.png_ref+')\n').join('\n');
+  portable.markdown_sha256=sha256(packageMarkdown);portable.package_role='FROZEN_FEEDBACK_EVIDENCE';
+  files.set('feedback.md',Buffer.from(packageMarkdown,'utf8'));
+  files.set('feedback.json',Buffer.from(JSON.stringify(portable,null,2)+'\n','utf8'));
+  return {files,missing};
+}
+
+function validateFeedbackManifest(prior,identity,source,prepared){
+  if(prior.schema_version!=='PREVIS_FEEDBACK_PACKAGE_V1'||prior.identity!==identity||prior.snapshot_role!=='FROZEN_FEEDBACK_EVIDENCE'||prior.media_pixel_verification!=='NOT_RUN'||prior.upstream_writes!==false||!isDeepStrictEqual(prior.source,source)||!isDeepStrictEqual(prior.missing_captures,prepared.missing)||!Array.isArray(prior.files)||prior.files.length!==prepared.files.size)
+    packageChanged('The previous feedback package manifest does not match the complete expected snapshot. Preserve it and review before exporting again.');
+  const seen=new Set();
+  for(const file of prior.files){
+    if(!file||typeof file.path!=='string'||seen.has(file.path)||!prepared.files.has(file.path)||!hex(file.sha256)||file.sha256!==sha256(prepared.files.get(file.path)))
+      packageChanged('The previous feedback package file list contains a missing, duplicate, unexpected path or incorrect hash. Preserve it and review before exporting again.');
+    seen.add(file.path);
+  }
+}
+
 export async function exportFeedback(root){
   return withStoreLock(root,async()=>{
     const packet=await listAnnotations(root),at=new Date().toISOString();
@@ -226,45 +274,33 @@ export async function exportFeedback(root){
     }
     const markdown=lines.join('\n')+'\n';
     const data={schema_version:'PREVIS_FEEDBACK_EXPORT_V1',generated_at:at,annotations_revision:packet.revision,scene_revision:packet.scene_revision,current_source:packet.current_source,counts,scope:'USER_CAPTURE_FEEDBACK',pixel_verification:'NOT_RUN',markdown_sha256:sha256(markdown),annotations:packet.annotations};
-    // Check all inputs before replacing prior feedback; prompts.md is never touched.
-    const latest=await readStore(root);if(latest.revision!==packet.revision)fail(409,'ANNOTATIONS_REVISION_CONFLICT','Annotations changed during export. Retry.');
+    // Derive expected paths and bytes from the current snapshot, never from a stored manifest.
+    const identity=sha256(JSON.stringify({revision:packet.revision,scene:packet.scene_revision,source:packet.current_source,states:packet.annotations.map(item=>[item.id,item.stale,item.capture_integrity])}));
+    const packageRelative='handoff/feedback-packages/'+identity,packageDirectory=path.join(root,packageRelative);
+    const prior=await readFeedbackManifest(packageDirectory);
+    const prepared=await prepareFeedbackPackage(root,data,markdown,prior?.created_at??at);
+    if(prior){
+      validateFeedbackManifest(prior,identity,packet.current_source,prepared);
+      // Only trusted expected paths reach the filesystem, even when a manifest is damaged.
+      for(const [file,expected] of prepared.files){
+        let bytes;try{bytes=await readFile(path.join(packageDirectory,file))}catch(error){if(error.code==='ENOENT')packageChanged('A previous feedback package file is missing. Preserve the package and restore/review it before exporting again.');throw error}
+        if(sha256(bytes)!==sha256(expected))packageChanged('A previous feedback package was altered. Preserve it and export into a reviewed new revision.');
+      }
+    }
+    const evidence=await readStore(root);if(evidence.revision!==packet.revision)fail(409,'ANNOTATIONS_REVISION_CONFLICT','Feedback changed during packaging. Retry.');
     const scene=await readProject(root);if(scene.revision!==packet.scene_revision)fail(409,'REVISION_CONFLICT','Scene changed during feedback export. Retry.');
     if(packet.current_source.valid)await assertSourceStable(root,{revision:packet.scene_revision,source:packet.current_source});
+    if(!prior){
+      const staging=path.join(root,'handoff','.feedback-'+randomUUID()+'.tmp');await mkdir(path.join(staging,'frames'),{recursive:true});
+      for(const [file,bytes] of prepared.files)await writeFile(path.join(staging,file),bytes);
+      const files=[...prepared.files].map(([file,bytes])=>({path:file,sha256:sha256(bytes)}));
+      await writeFile(path.join(staging,'package-manifest.json'),JSON.stringify({schema_version:'PREVIS_FEEDBACK_PACKAGE_V1',identity,snapshot_role:'FROZEN_FEEDBACK_EVIDENCE',created_at:at,source:packet.current_source,files,missing_captures:prepared.missing,media_pixel_verification:'NOT_RUN',upstream_writes:false},null,2)+'\n','utf8');
+      await mkdir(path.dirname(packageDirectory),{recursive:true});await rename(staging,packageDirectory);
+    }
+    // Rejected packages do not replace the prior successful top-level feedback.
     await mkdir(path.join(root,'handoff'),{recursive:true});
     await writeAtomic(path.join(root,'handoff','feedback.md'),markdown);
     await writeJsonAtomic(path.join(root,'handoff','feedback.json'),data);
-    const identity=sha256(JSON.stringify({revision:packet.revision,scene:packet.scene_revision,source:packet.current_source,states:packet.annotations.map(item=>[item.id,item.stale,item.capture_integrity])}));
-    const packageRelative=`handoff/feedback-packages/${identity}`,packageDirectory=path.join(root,packageRelative);
-    let complete=false,prior=null;
-    try{prior=JSON.parse(await readFile(path.join(packageDirectory,'package-manifest.json'),'utf8'))}catch(error){if(error.code!=='ENOENT')throw error}
-    if(prior){
-      if(prior.identity!==identity||!Array.isArray(prior.files))fail(409,'FEEDBACK_PACKAGE_CHANGED','The previous feedback package manifest is inconsistent. Preserve it and review before exporting again.');
-      complete=true;
-      for(const file of prior.files){
-        let bytes;try{bytes=await readFile(path.join(packageDirectory,file.path))}catch(error){if(error.code==='ENOENT')fail(409,'FEEDBACK_PACKAGE_CHANGED','A previous feedback package file is missing. Preserve the package and restore/review it before exporting again.');throw error}
-        if(sha256(bytes)!==file.sha256)fail(409,'FEEDBACK_PACKAGE_CHANGED','A previous feedback package was altered. Preserve it and export into a reviewed new revision.');
-      }
-    }
-    if(!complete){
-      const staging=path.join(root,'handoff',`.feedback-${randomUUID()}.tmp`);await mkdir(path.join(staging,'frames'),{recursive:true});
-      const portable=structuredClone(data),copied=[],missing=[];
-      for(const item of portable.annotations){
-        item.original_png_ref=item.png_ref;
-        if(item.capture_integrity==='AVAILABLE'){
-          const bytes=await readFile(path.join(root,item.png_ref));
-          if(sha256(bytes)!==item.png_sha256)fail(409,'CAPTURE_INTEGRITY_MISMATCH','Capture changed while building the portable feedback package. Retry.');
-          item.png_ref=`frames/${item.png_sha256}.png`;await writeFile(path.join(staging,item.png_ref),bytes);copied.push({path:item.png_ref,sha256:item.png_sha256});
-        }else{missing.push({annotationId:item.id,original_png_ref:item.png_ref,status:item.capture_integrity});item.png_ref=null}
-      }
-      const packageMarkdown=markdown.replaceAll('../review/frames/','frames/')+'\n交付说明：本目录包含可用的原始PNG与反馈数据；原始引用保留在feedback.json。损坏或缺失图像明确列在manifest，不冒充已携带。\n\n'+portable.annotations.filter(item=>item.png_ref).map(item=>`### 捕获 ${item.id}\n\n![批注对应原始画面](${item.png_ref})\n`).join('\n');
-      portable.markdown_sha256=sha256(packageMarkdown);portable.package_role='FROZEN_FEEDBACK_EVIDENCE';
-      await writeFile(path.join(staging,'feedback.md'),packageMarkdown,'utf8');await writeFile(path.join(staging,'feedback.json'),JSON.stringify(portable,null,2)+'\n','utf8');
-      const evidence=await readStore(root);if(evidence.revision!==packet.revision)fail(409,'ANNOTATIONS_REVISION_CONFLICT','Feedback changed during packaging. Retry.');
-      if(packet.current_source.valid)await assertSourceStable(root,{revision:packet.scene_revision,source:packet.current_source});
-      copied.push({path:'feedback.md',sha256:sha256(packageMarkdown)},{path:'feedback.json',sha256:sha256(await readFile(path.join(staging,'feedback.json')))});
-      await writeFile(path.join(staging,'package-manifest.json'),JSON.stringify({schema_version:'PREVIS_FEEDBACK_PACKAGE_V1',identity,snapshot_role:'FROZEN_FEEDBACK_EVIDENCE',created_at:at,source:packet.current_source,files:copied,missing_captures:missing,media_pixel_verification:'NOT_RUN',upstream_writes:false},null,2)+'\n','utf8');
-      await mkdir(path.dirname(packageDirectory),{recursive:true});await rename(staging,packageDirectory);
-    }
     return {saved:true,revision:packet.revision,json:'handoff/feedback.json',markdown:'handoff/feedback.md',packageDirectory:packageRelative,counts};
   });
 }

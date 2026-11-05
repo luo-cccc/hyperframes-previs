@@ -52,12 +52,17 @@ def finalize(draft_file, output):
         except ValueError:
             ref = file.as_posix()
         source = {'role': row['role'], 'path': ref, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest(), 'original_ref': row.get('original_ref', row['path'])}
+        if fragment:
+            require(row['role'] in ('master', 'text_evidence', 'source_script'), 'Markdown fragment selector is unsupported for this source role.')
+            selected = section_text(file.read_text(encoding='utf-8-sig'), fragment).strip()
+            require(selected, f'Selected {row["role"]} fragment is empty: #{fragment}')
+            source['selector'] = {'kind': 'MARKDOWN_FRAGMENT_V1', 'fragment': fragment, 'normalization': 'LF_STRIP_BOUNDARY_WHITESPACE'}
+            source['selected_sha256'] = hashlib.sha256(selected.encode('utf-8')).hexdigest()
         if row['role'] == 'master':
             master = section_text(file.read_text(encoding='utf-8-sig'), fragment)
             beginning = master.find('场《')
             require(beginning >= 0, 'Mother-script evidence needs an explicit complete mother script, not an assistant summary.')
             master = master[beginning:]
-            source['fragment'] = fragment
         sources.append(source)
     for marker in ('【全片风格】', '【整体描述】', '【禁止项】'):
         require(marker in master, f'Mother-script structure is incomplete: {marker}')

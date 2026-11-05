@@ -131,7 +131,10 @@ export async function checkUpstream(root,scene){
     const sourceFile=path.resolve(path.dirname(file),source.path),content=await readFile(sourceFile),actual=sha256(content);
     if(source.role==='master'){
       const raw=content.toString('utf8').replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n');
-      const selected=source.selector?.kind==='MARKDOWN_FRAGMENT_V1'?sectionText(raw,source.selector.fragment):raw;
+      // Legacy manual packets retain full-file SHA validation below; only recover their explicit master selection.
+      const fragment=source.selector?.kind==='MARKDOWN_FRAGMENT_V1'?source.selector.fragment:packet.input_mode==='MANUAL_TRANSCRIPTION'&&!source.selector?source.fragment:undefined;
+      expect(fragment===undefined||typeof fragment==='string','invalid mother-script fragment.');
+      const selected=fragment?sectionText(raw,fragment):raw;
       const start=selected.indexOf('场《');
       expect(start>=0&&selected.slice(start).trim()===packet.master.text.replace(/\r\n?/g,'\n').trim(),'packet mother-script copy differs from its actual source; re-extract instead of manually editing a sealed intake.');
     }

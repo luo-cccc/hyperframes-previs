@@ -35,9 +35,17 @@ function setPlaying(value){playing=value;stamp=performance.now();$('play').textC
 function tick(now){if(!playing)return;const next=time+(now-stamp)/1000;stamp=now;seek(next);if(time>=scene.duration)setPlaying(false);else requestAnimationFrame(tick)}
 function pathFields(){const a=scene.actors.find(a=>a.id===$('actor').value);const index=Number($('path-key').value);a.path[index].position.forEach((v,i)=>$( ['ax','ay','az'][i]).value=v)}
 function pathKeys(){const a=scene.actors.find(a=>a.id===$('actor').value);if(!a)return;$('path-key').replaceChildren(...a.path.map((p,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`${p.t.toFixed(2)} 秒`;return o}));pathFields();refreshLocks()}
-frame.addEventListener('load',async()=>{
+let initializedFrameDocument=null;
+async function initializeStudio(){
+  const frameDocument=frame.contentDocument,readiness=frame.contentWindow?.__hf?.buildReady?.previs;
+  if(!frameDocument||!readiness||frameDocument===initializedFrameDocument)return;
+  initializedFrameDocument=frameDocument;
   try{
-    await frame.contentWindow.__hf.buildReady.previs;api=frame.contentWindow.PREVIS;scene=api.data;
+    await readiness;if(frame.contentDocument!==frameDocument)return;
+    api=frame.contentWindow.PREVIS;scene=api.data;
+    setPlaying(false);lastShot='';pendingCapture=null;annotationPacket=null;
+    $('shots').replaceChildren();$('actor').replaceChildren();$('legend').replaceChildren();
+    $('capture-preview').hidden=true;$('capture-info').textContent='';
     $('title').textContent=scene.title;$('spec').textContent=`${scene.width} × ${scene.height} · ${scene.fps} fps · ${scene.duration} s`;
     $('timeline').max=scene.duration;$('timeline').step=1/scene.fps;
     for(const s of scene.shots){const b=document.createElement('button');b.dataset.shot=s.id;b.dataset.label=`${s.id}　${s.start}–${s.end} 秒`;b.textContent=b.dataset.label;b.onclick=()=>{setPlaying(false);seek(s.start)};$('shots').appendChild(b)}
@@ -51,7 +59,9 @@ frame.addEventListener('load',async()=>{
     initialRuntimeToken=(await projectApi('./__previs/source')).runtime_sha256;
     await refreshAnnotations();
   }catch(error){message(error.message,true)}
-});
+}
+frame.addEventListener('load',initializeStudio);
+if(frame.contentDocument?.readyState==='complete')initializeStudio();
 $('play').onclick=()=>{if(api){if(time>=scene.duration)seek(0);setPlaying(!playing)}};
 $('restart').onclick=()=>{if(api){setPlaying(false);seek(0)}};
 $('timeline').oninput=()=>{if(api){setPlaying(false);seek($('timeline').value)}};

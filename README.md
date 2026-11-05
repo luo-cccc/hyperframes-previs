@@ -58,6 +58,7 @@ node scripts/create_project.mjs /path/to/demo --demo
 | 采纳的设计与暂缓能力 | [adopted-designs.md](references/adopted-designs.md) |
 | 用户使用回归场景 | [user-scenarios.md](evals/user-scenarios.md) |
 | 60 fps 实测记录 | [60fps-smoke-2026-11-05.md](evals/60fps-smoke-2026-11-05.md) |
+| 用户模拟与修复回归 | [user-simulation-2026-11-06.md](evals/user-simulation-2026-11-06.md) |
 
 ## 运行与验证边界
 
