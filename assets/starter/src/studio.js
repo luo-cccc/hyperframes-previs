@@ -118,7 +118,7 @@ async function refreshAnnotations(){
 $('check-spatial').onclick=()=>action(async()=>{
   const report=await projectApi('./__previs/spatial');$('spatial-summary').textContent=`${report.status==='NO_ISSUES_OBSERVED'?'抽查未发现问题':'发现需查看的警告'} · ${report.sampling.sampleCount} 个采样帧 · ${report.counts.issueGroups} 组。范围：代理几何，不代表完整审片通过。`;
   const host=$('spatial-issues');host.replaceChildren();
-  for(const issue of report.issues){const button=document.createElement('button');button.className='issue';button.textContent=`${issue.shotId} ${issue.start_s.toFixed(3)}–${issue.end_s.toFixed(3)}s · ${issue.code} · ${issue.actorIds.join(', ')||issue.obstacleId||'相机'}`;button.onclick=()=>{setPlaying(false);seek(issue.start_s)};host.append(button)}
+  for(const issue of report.issues){const button=document.createElement('button');button.className='issue';button.textContent=`${issue.shotId} ${issue.start_s.toFixed(3)}–${issue.end_s.toFixed(3)}s · ${issue.code==='ARM_TARGET_UNREACHABLE'?'手部目标超出臂展（'+(issue.evidence.hand==='left'?'左手':'右手')+'，差 '+issue.evidence.reach_error_m.toFixed(3)+' 米）':issue.code} · ${issue.actorIds.join(', ')||issue.obstacleId||'相机'}`;button.onclick=()=>{setPlaying(false);seek(issue.start_s)};host.append(button)}
   message('已检查磁盘中的已保存场景。详细代理检查范围需结合画面审阅。');
 });
 window.addEventListener('beforeunload',event=>{if(api?.dirtyShots.length){event.preventDefault();event.returnValue=''}});

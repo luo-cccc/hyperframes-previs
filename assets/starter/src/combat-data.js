@@ -1,5 +1,6 @@
+import {solveArmTarget} from './limb-ik.js';
 /** Deterministic combat proxies in metres, world Y up, XYZ Euler radians.
- * Contacts explain declared targets. They are not IK, forces or tactical approval.
+ * Contacts declare targets. Fixed-length arm solving preserves reach gaps; force and tactical approval remain separate.
  * The reciprocal import contains function declarations only: base actor sampling
  * never invokes combat; sampleActions supplies those base states to this module.
  */
@@ -90,6 +91,7 @@ export function validateCombatData(scene){
     expect(vector(item.size)&&item.size.every(v=>v>0),label+'.size must be positive XYZ metres.');
     expect(typeof item.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(item.color),label+'.color must be #RRGGBB.');
     if(item.attachment!==undefined)expect(['world','hand'].includes(item.attachment),label+'.attachment must be world or hand.');
+    if(item.attachment_role!==undefined)expect(item.attachment_role==='surface'&&item.attachment==='hand'&&item.kind==='mark',label+'.attachment_role=surface is reserved for hand-attached surface marks.');
     if(item.hand_offset!==undefined)expect(vector(item.hand_offset),label+'.hand_offset must be finite XYZ metres in actor yaw space.');
     if(item.solid!==undefined)expect(typeof item.solid==='boolean',label+'.solid must be boolean.');
     if(item.light!==undefined){expect(object(item.light),label+'.light must be an object.');if(object(item.light)){expect(finite(item.light.intensity)&&item.light.intensity>=0&&item.light.intensity<=10000,label+'.light.intensity must be finite in [0,10000].');expect(finite(item.light.range)&&item.light.range>0,label+'.light.range must be positive.');if(item.light.color!==undefined)expect(typeof item.light.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(item.light.color),label+'.light.color must be #RRGGBB.');}}
@@ -141,7 +143,7 @@ export function validateCombatData(scene){
   if(!errors.length){
     errors.push(...irreversibleErrors(events));
     for(const t of [...times].sort((a,b)=>a-b)){
-      const held=new Map();for(const item of objects){const key=sampleKey(item.keys,t);if(key.visible&&key.owner_id&&key.hand){const id=key.owner_id+':'+key.hand;expect(!held.has(id),'Two visible combat objects claim the same owner hand at '+t+'s: '+id);held.set(id,item.id)}}
+      const held=new Map();for(const item of objects){const key=sampleKey(item.keys,t);if(key.visible&&key.owner_id&&key.hand&&item.attachment_role!=='surface'){const id=key.owner_id+':'+key.hand;expect(!held.has(id),'Two visible combat objects claim the same owner hand at '+t+'s: '+id);held.set(id,item.id)}}
       expect(!dependencies(scene,t),'Combat hand/object dependency cycle at '+t+'s.');
     }
   }
@@ -162,7 +164,8 @@ export function sampleCombat(scene,t,actorStates){
     const node='actor:'+actorId+':'+(limb==='feet'?'foot:':'hand:')+hand;
     if(resolving.has(node))inputError(['Combat limb/object dependency cycle.']);resolving.add(node);
     const c=combat.contacts.find(c=>c.expected&&c.actor_id===actorId&&(limb==='feet'?c.foot===hand:c.hand===hand)&&interval(c,t,scene.duration));
-    const target=c?{position:combatPointToWorld(resolveObject(c.target_id),c.local_point),contact:clone(c),basis:'COMBAT_LOCAL_CONTACT'}:clone(actors[actorId][limb][hand]);
+    const requested=c?{position:combatPointToWorld(resolveObject(c.target_id),c.local_point),contact:clone(c),basis:'COMBAT_LOCAL_CONTACT'}:clone(actors[actorId][limb][hand]);
+    const target=limb==='hands'?solveArmTarget(scene.actors.find(a=>a.id===actorId),actors[actorId],hand,requested):requested;
     resolving.delete(node);return target;
   };
   const resolveObject=id=>{

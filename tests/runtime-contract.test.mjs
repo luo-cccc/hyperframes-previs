@@ -55,21 +55,22 @@ test('logical seam preserves door transform, fixed feet, palm, right key, head t
   close(leftVelocity,rightVelocity);assert(leftVelocity>0);
   assert(sampleDoor(f1,9-1/60).angle<sampleDoor(f2,0).angle,'The physical last frame must not masquerade as a logical extra endpoint frame.');
 });
-test('all 1260 export samples keep fixed feet, left palm on the leaf and key in the right hand',()=>{
+test('all 1260 export samples preserve the authored door target, fixed arm bones, honest reach gaps and key grip',()=>{
   for(const scene of [f1,f2])for(let frame=0;frame<scene.duration*scene.fps;frame++){
     const t=frame/scene.fps,action=sampleActions(scene,t),actor=action.actors['xu-ning'];
     vectorClose(actor.position,[.6,0,.28]);
-    vectorClose(actor.hands.left.position,doorPointToWorld(action.door,scene.actors[0].contacts[0].localPoint));
+    vectorClose(actor.hands.left.target_position,doorPointToWorld(action.door,scene.actors[0].contacts[0].localPoint));
+    for(const hand of Object.values(actor.hands)){close(Math.hypot(...hand.ik.elbow.map((v,i)=>v-hand.ik.shoulder[i])),hand.ik.upper_length_m);close(Math.hypot(...hand.position.map((v,i)=>v-hand.ik.elbow[i])),hand.ik.lower_length_m);close(Math.hypot(...hand.position.map((v,i)=>v-hand.target_position[i])),hand.ik.reach_error_m);}
     assert.equal(actor.hands.left.contact.targetId,'door');assert.equal(actor.prop.hand,'right');
     vectorClose(actor.prop.position,actor.hands.right.position.map((v,i)=>v+[0,-.035,0][i]));
   }
 });
 test('full opening occurs after 18 seconds, then gaze and original speech are separately planned',()=>{
   close(sampleDoor(f2,9).angle,Math.PI/2);close(sampleDoor(f2,12).angle,Math.PI/2);
-  vectorClose(sampleActions(f2,9).actors['xu-ning'].hands.left.position,[.61,1.12,-.32]);
+  vectorClose(sampleActions(f2,9).actors['xu-ning'].hands.left.target_position,[.61,1.12,-.32]);
   for(const t of [0,1.5,3,4.5,6,7.5,9]){
     const actor=sampleActions(f2,t).actors['xu-ning'];
-    vectorClose(actor.gaze.target,actor.hands.left.position);
+    vectorClose(actor.gaze.target,actor.hands.left.target_position);
   }
   assert.notDeepEqual(sampleActions(f2,10).actors['xu-ning'].gaze.target,sampleActions(f2,9).actors['xu-ning'].gaze.target);
   assert.deepEqual(f1.performancePlan.speech,[]);

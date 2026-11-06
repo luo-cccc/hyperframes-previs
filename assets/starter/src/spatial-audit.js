@@ -106,7 +106,7 @@ export function auditScene(scene,options={}){
     return {
       add(code,actorIds,evidence,extra={}){
         thisSample++;issueObservations++;byCode[code]=(byCode[code]||0)+1;
-        const key=JSON.stringify([code,shot.id,actorIds,extra.obstacleId??null,extra.blockerId??null,evidence.blockerKind??null]);
+        const key=JSON.stringify([code,shot.id,actorIds,extra.obstacleId??null,extra.blockerId??null,evidence.blockerKind??null,evidence.hand??null]);
         const previous=lastIssue.get(key),time=round(frame/scene.fps);
         if(previous&&previous.lastSampleIndex===sampleIndex-1){previous.issue.end_s=time;previous.issue.lastFrame=frame;previous.issue.observations++;previous.lastSampleIndex=sampleIndex;return}
         const issue={code,severity:'warning',shotId:shot.id,actorIds,start_s:time,end_s:time,firstFrame:frame,lastFrame:frame,observations:1,interval_basis:'FIRST_AND_LAST_OBSERVED_SAMPLE',evidence,...extra};
@@ -119,6 +119,7 @@ export function auditScene(scene,options={}){
     const frame=frames[sampleIndex],time=frame/scene.fps,shot=scene.shots.find(item=>time>=item.start&&time<item.end)||scene.shots.at(-1),events=checkStart(frame,sampleIndex,shot);
     const states=scene.actors.map(actor=>({id:actor.id,...actorDimensions(actor),position:samplePath(actor.path,time).position}));
     const pose=sampleCamera(shot,time),basis=cameraBasis(pose);
+    if(!scene.combat){const sampled=sampleActions(scene,time);for(const [actorId,actor]of Object.entries(sampled.actors))for(const [side,hand]of Object.entries(actor.hands))if(!hand.ik.reachable&&hand.ik.reach_error_m>config.tolerance)events.add('ARM_TARGET_UNREACHABLE',[actorId],{hand:side,target_position:hand.target_position,actual_position:hand.position,reach_error_m:hand.ik.reach_error_m,max_reach_m:hand.ik.max_reach_m});}
     for(const actor of states){
       const [x,y,z]=actor.position;
       if(y<(bounds.groundY??bounds.min[1])-config.tolerance)events.add('ACTOR_BELOW_FLOOR',[actor.id],{position:actor.position,floorY:bounds.groundY??bounds.min[1],tolerance_m:config.tolerance});
@@ -194,13 +195,14 @@ export function auditCombat(scene,options={}){
   for(let f=0;f<frameCount;f+=config.everyFrames)frames.push(f);if(frames.at(-1)!==frameCount-1)frames.push(frameCount-1);
   const issues=[],groups=new Map(),planned=new Map(),bounds=stageBounds(scene);let previous=null;
   const warn=(code,ids,frame,details)=>{
-    const shot=scene.shots.find(s=>frame/scene.fps>=s.start&&frame/scene.fps<s.end)||scene.shots.at(-1),key=JSON.stringify([code,ids,shot.id]);
+    const shot=scene.shots.find(s=>frame/scene.fps>=s.start&&frame/scene.fps<s.end)||scene.shots.at(-1),key=JSON.stringify([code,ids,shot.id,details.hand??null]);
     const prior=groups.get(key);
     if(prior&&prior._sample===frame-config.everyFrames){prior.lastFrame=frame;prior.end_s=round(frame/scene.fps);prior.observations++;prior._sample=frame;return}
     const item={code,severity:'warning',objectIds:ids,shotId:shot.id,firstFrame:frame,lastFrame:frame,start_s:round(frame/scene.fps),end_s:round(frame/scene.fps),observations:1,evidence:details,_sample:frame};issues.push(item);groups.set(key,item);
   };
   for(const frame of frames){
     const t=frame/scene.fps,combat=sampleActions(scene,t).combat,values=Object.values(combat.objects);
+    for(const [actorId,actor]of Object.entries(combat.actors))for(const [side,hand]of Object.entries(actor.hands))if(hand.ik&&!hand.ik.reachable&&hand.ik.reach_error_m>config.tolerance)warn('ARM_TARGET_UNREACHABLE',[actorId],frame,{actor_id:actorId,hand:side,target_position:hand.target_position,actual_position:hand.position,reach_error_m:hand.ik.reach_error_m,max_reach_m:hand.ik.max_reach_m,contact_id:hand.contact?.id??null});
     const active=combat.contacts.filter(c=>c.expected),boxes=new Map(values.map(o=>[o.id,objectBox(o)]));
     for(const c of combat.contacts){
       if(c.expected){const p=planned.get(c.id)??{id:c.id,actor_id:c.actor_id??null,object_id:c.object_id??null,target_id:c.target_id,observations:0,max_gap_m:0,basis:'DECLARED_PROXY_CONTACT'};p.observations++;p.max_gap_m=Math.max(p.max_gap_m,c.gap_m);planned.set(c.id,p);
@@ -238,5 +240,5 @@ export function auditCombat(scene,options={}){
     previous=combat;
   }
   for(const issue of issues)delete issue._sample;
-  return {schema_version:'PREVIS_COMBAT_AUDIT_V1',scope:'SAMPLED_PROXY',status:issues.length?'ISSUES_FOUND':'NO_ISSUES_OBSERVED',sampling:{basis:'EXPORT_FRAME_TIMES',fps:scene.fps,frameCount,everyFrames:config.everyFrames,sampleCount:frames.length,sampleFrames:frames},plannedContacts:[...planned.values()],issues,counts:{issueGroups:issues.length,plannedContactGroups:planned.size},checks:{absoluteTracks:true,uniqueOwnership:'STRUCTURAL_VALIDATION',irreversibility:'STRUCTURAL_VALIDATION',expectedContactGaps:true,weaponExplicitObstacles:true,requiredObjectsOnly:true},limitations:['Contact targets are explanatory proxies, not IK, support, forces or tactical PASS.','Collision uses transformed object AABBs and sampled/swept proxy centres, not exact mesh collision.','Only declared requiredObjects and explicit obstacles are checked; undeclared attack targets are not inferred.','Visibility/knowledge/light event records are preserved; drawing visibility comes only from the explicit object keys.','Open air uses declared world bounds and ground height, never an indoor ceiling.']};
+  return {schema_version:'PREVIS_COMBAT_AUDIT_V1',scope:'SAMPLED_PROXY',status:issues.length?'ISSUES_FOUND':'NO_ISSUES_OBSERVED',sampling:{basis:'EXPORT_FRAME_TIMES',fps:scene.fps,frameCount,everyFrames:config.everyFrames,sampleCount:frames.length,sampleFrames:frames},plannedContacts:[...planned.values()],issues,counts:{issueGroups:issues.length,plannedContactGroups:planned.size},checks:{absoluteTracks:true,uniqueOwnership:'STRUCTURAL_VALIDATION',irreversibility:'STRUCTURAL_VALIDATION',expectedContactGaps:true,weaponExplicitObstacles:true,requiredObjectsOnly:true},limitations:['Fixed-length proxy arm IK reports reach gaps; it does not prove anatomical limits, support, forces or tactical PASS.','Collision uses transformed object AABBs and sampled/swept proxy centres, not exact mesh collision.','Only declared requiredObjects and explicit obstacles are checked; undeclared attack targets are not inferred.','Visibility/knowledge/light event records are preserved; drawing visibility comes only from the explicit object keys.','Open air uses declared world bounds and ground height, never an indoor ceiling.']};
 }

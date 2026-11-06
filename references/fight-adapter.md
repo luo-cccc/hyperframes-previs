@@ -42,7 +42,8 @@ combat.schema_version=PREVIS_COMBAT_V1：
 
 - objects：稳定id、kind、size/color、绝对时间keys。position/rotation/scale插值，visible/owner_id/hand/state阶梯求值。剑在手/离手/在途/被钩/回收始终是一件对象；attachment=hand的对象随明确持物手移动。
 - objects可显式设置solid:false，区分光、流、火焰等非实体效果和硬障碍；light:{intensity,range,color}提供有限范围光源，light事件在原时刻改变强度／颜色，visible:false同时关闭光源。未声明的实体盾／屏障仍纳入几何检查。
-- contacts：显式actor手/脚或object_id到target_id、local_point、start/end、expected。计划内接触与意外穿模分开，循环持物约束拒绝；几何接点重合不证明骨骼可达、受力或伤害成立。
+- contacts：显式actor手/脚或object_id到target_id、local_point、start/end、expected。计划内接触与意外穿模分开，循环持物约束拒绝；手部请求目标保留在target_position，position为固定骨长IK求得的实际手腕，ik保留肩／肘／腕、固定骨长与reachable/reach_error_m。超出臂展时夹到可达范围，真实gap仍保留，输出ARM_TARGET_UNREACHABLE；不重写上游路径或把目标点冒充实际手腕。有限几何可达不证明关节限位、受力或伤害成立。
+- hand附件可显式设置attachment_role:surface（仅mark），表示随实际手部的皮肤／伤损标记，不占用持物名额；其他物件仍拒绝一手重复持物。
 - events：资源、伤损、地形、真假、可见性及光照状态，明确target、channel、时刻、不可逆和原beat。直接跳转后还原累计结果，不靠上一帧累加。跨段初态携带既成后果，不重新点亮节点或复原缺口。
 
 运行时提供sampleActions().combat及可见代理几何。sample数据、实际渲染与人工语义分开；施法者出画不自动终止术法。效果、范围、残留和光源应在真实相位变化，幻象标类型并服从可见信息窗口，不提前把真相画给观众。

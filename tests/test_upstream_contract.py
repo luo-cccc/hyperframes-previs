@@ -132,7 +132,7 @@ class UpstreamContractTests(unittest.TestCase):
 
     def test_path_alias_preserved(self):
         packet = self.seal()
-        self.assertEqual(packet['adapter_version'], '0.6.0')
+        self.assertEqual(packet['adapter_version'], '0.6.1')
         self.assertEqual(packet['schema_version'], 'STORYBOARD_PREVIS_ADAPTER_V1')
         self.assertEqual(packet['upstream_snapshot']['source_script_ref'], self.state['source_script_ref'])
         self.assertEqual(packet['resolved_source_script_ref']['aliases'], {'path': 'script.md#source'})
@@ -555,7 +555,7 @@ class UpstreamContractTests(unittest.TestCase):
 
     def test_new_manual_fragments_and_provenance(self):
         packet = self.seal(self.manual_packet())
-        self.assertEqual(packet['adapter_version'], '0.6.0')
+        self.assertEqual(packet['adapter_version'], '0.6.1')
         self.assertEqual(packet['validation_profile'], 'MANUAL_EVIDENCE_V1')
         self.assertEqual(packet['upstream_provenance']['skill_version'], 'UNKNOWN')
         self.assertTrue(self.check()['ok'])

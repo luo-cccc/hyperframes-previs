@@ -1,3 +1,4 @@
+import {solveArmTarget} from './limb-ik.js';
 import {actorScale,sampleCombat} from './combat-data.js';
 // All coordinates are metres, Y up. Angles are radians. A hinged leaf spans
 // local X=[0,width], Y=[0,height], Z=[-thickness/2,+thickness/2] from its hinge.
@@ -97,7 +98,7 @@ export function samplePath(keys,t){
       const moved=(left,right)=>Math.hypot(...right.position.map((v,j)=>v-left.position[j]))>.001;
       const starts=i===1||!moved(keys[i-2],a),ends=i===keys.length-1||!moved(b,keys[i+1]);
       const envelope=(starts?smooth((t-a.t)/.22):1)*(ends?smooth((b.t-t)/.22):1);
-      return {position:lerpVector(a.position,b.position,u),distance:distance+length*u,velocity,heading,walking:Math.min(1,length/(b.t-a.t))*envelope};
+      return {position:u===0?[...a.position]:u===1?[...b.position]:lerpVector(a.position,b.position,u),distance:distance+length*u,velocity,heading,walking:Math.min(1,length/(b.t-a.t))*envelope};
     }
     distance+=length;
   }
@@ -107,6 +108,7 @@ export function sampleLinearKeys(keys,t,field){
   const bIndex=keys.findIndex(key=>key.t>=t);
   if(bIndex<=0)return structuredClone(keys[bIndex===0?0:keys.length-1][field]);
   const a=keys[bIndex-1],b=keys[bIndex],u=clamp((t-a.t)/(b.t-a.t));
+  if(t===b.t)return structuredClone(b[field]);
   return Array.isArray(a[field])?lerpVector(a[field],b[field],u):lerp(a[field],b[field],u);
 }
 function actionTime(scene,t){
@@ -128,7 +130,7 @@ export function doorPointToWorld(doorState,localPoint){
 }
 
 /** Pure mannequin targets. Contact hands follow the current door transform exactly.
- * The rendered arms are explanatory segments, not anatomical IK or a reach proof.
+ * Arm targets are solved with fixed-length proxy bones; unreachable targets retain a real residual.
  * Character forward is local -Z; left hand is local -X, right is local +X.
  */
 export function sampleActorAction(scene,actor,t,doorState=sampleDoor(scene,t)){
@@ -148,7 +150,7 @@ export function sampleActorAction(scene,actor,t,doorState=sampleDoor(scene,t)){
     const local=keyHand?[sign*.39,.88,.1]:[sign*.285,1.41-.32*Math.cos(angle)-.28*Math.cos(angle+.75),-.32*Math.sin(angle)-.28*Math.sin(angle+.75)];
     const contact=(actor.contacts??[]).find(c=>c.hand===hand&&t>=c.start&&(t<c.end||t===scene.duration&&t===c.end));
     const target=actor.handKeys?.[hand]?sampleLinearKeys(actor.handKeys[hand],t,'position'):null;
-    hands[hand]={position:contact?doorPointToWorld(doorState,contact.localPoint):target??toWorld(local),contact:contact?structuredClone(contact):null,basis:contact?'DOOR_LOCAL_CONTACT':target?'EXPLICIT_WORLD_TARGET':keyHand?'KEY_HIP_HOLD':'MANNEQUIN_REST'};
+    hands[hand]=solveArmTarget(actor,{modelPosition,yaw},hand,{position:contact?doorPointToWorld(doorState,contact.localPoint):target??toWorld(local),contact:contact?structuredClone(contact):null,basis:contact?'DOOR_LOCAL_CONTACT':target?'EXPLICIT_WORLD_TARGET':keyHand?'KEY_HIP_HOLD':'MANNEQUIN_REST'});
   }
   const feet={};
   for(const side of ['left','right']){

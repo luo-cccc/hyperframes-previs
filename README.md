@@ -1,6 +1,6 @@
 # HyperFrames 分镜预演适配 Skill
 
-当前版本：**0.6.0**。技能入口：[SKILL.md](SKILL.md)。
+当前版本：**0.6.1**。技能入口：[SKILL.md](SKILL.md)。
 
 接收 [script-to-storyboard-prompts](https://github.com/luo-cccc/script-to-storyboard-prompts) 已交付的有效正式母稿、同版预算、人物/场景/道具资产与首尾状态，制作可编辑的 Three.js 三维预演，再通过 HyperFrames 逐帧导出参考视频。
 
@@ -70,6 +70,7 @@ node scripts/create_project.mjs /path/to/demo --demo
 | 用户模拟与修复回归 | [user-simulation-2026-11-06.md](evals/user-simulation-2026-11-06.md) |
 | 0.5.0 三批落地验收 | [0.5.0-three-batch-acceptance.md](evals/0.5.0-three-batch-acceptance.md) |
 | 0.6.0 战斗接入、媒体与独立模拟 | [0.6.0-fight-three-batch-acceptance.md](evals/0.6.0-fight-three-batch-acceptance.md) |
+| 0.6.1 固定手臂长度、实际可达性与新视频 | [0.6.1-fixed-arm-length.md](evals/0.6.1-fixed-arm-length.md) |
 
 ## 运行与验证边界
 
@@ -92,3 +93,5 @@ node scripts/check_project.mjs --report outputs/checks.json
 战斗源示例从用户提供的真实JSON创建，不把上游全文打包进本仓库：`node scripts/create_fight_example.mjs outputs/fight-demo --project <已有战斗JSON>`。单元内依次运行 `npm run fight-check`、`npm run render`、`npm run state-capture`、`npm run boundary-pack`、`npm run handoff`，媒体与语义各按实际范围记录。
 
 0.6.0 完成 **449 项回归（0 失败、0 跳过）**，四类战斗的 12 段 60fps MP4 共 137 秒／8,220 帧、51 张原时刻状态 PNG 和 33 组实际视频接点。代理几何仍有 10 组保守告警，相关 5 段的 FIGHT_PREVIS 保持 BLOCKED；音频、骨骼受力、最终身份与模型语义未被自动验收。详见 0.6.0 验收记录。
+
+0.6.1 修复手臂随目标距离伸缩：上臂／前臂固定骨长，保留原请求与实际手腕的真实间隙，普通场景和战斗场景统一报警。**527 项回归全部通过，0 跳过**；实际网格与全帧骨长另行核对。不可达目标仍需调整姿态，不通过拉伸手臂获得假接触。

@@ -19,7 +19,7 @@ export async function init(){
   scene.shots=scene.shots.slice(0,2).map((shot,index)=>({...shot,start:index*.6,end:(index+1)*.6}));
   delete scene.upstream;delete scene.timeMapping;delete scene.assetBindings;delete scene.transitionMap;
   await save(path.join(base,'scene.json'),scene);await save(path.join(base,'index.html'),'SYNTHETIC TEST FIXTURE ONLY\n');await save(path.join(base,'package.json'),{type:'module',private:true});
-  await mkdir(path.join(base,'src'));for(const name of ['action-data.js','time-mapping.js','combat-data.js'])await cp(path.join(repo,'assets/starter/src',name),path.join(base,'src',name));
+  await mkdir(path.join(base,'src'));for(const name of ['action-data.js','time-mapping.js','combat-data.js','limb-ik.js'])await cp(path.join(repo,'assets/starter/src',name),path.join(base,'src',name));
   await mkdir(path.join(base,'renders'));await makeVideo(base);await seal(base);
 }
 export async function fixture(name){const root=path.join(runRoot,`${String(++sequence).padStart(3,'0')}-${name}`);await cp(base,root,{recursive:true});return root}

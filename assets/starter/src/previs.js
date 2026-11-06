@@ -1,3 +1,4 @@
+import {ARM_LENGTHS} from './limb-ik.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { validateScene, sampleCamera, clamp, stageBounds } from './scene-data.js';
@@ -129,10 +130,10 @@ function mannequin(actor){
     const elbow=new THREE.Group();elbow.position.set(0,-.32,0);arm.add(elbow);elbow.rotation.x=.75;
     box(.11,.28,.11,0,-.15,0,colored,elbow);arm.rotation.x=actor.pose==='aim'?.83:.1;
     const hand=sign<0?'left':'right',contactArm=new THREE.Group();g.add(contactArm);contactArm.visible=false;
-    const upper=box(.1,1,.1,0,0,0,colored,contactArm),lower=box(.09,1,.09,0,0,0,colored,contactArm);
+    const boneScale=actorScale(actor)[1],upper=box(.1*boneScale,ARM_LENGTHS.upper*boneScale,.1*boneScale,0,0,0,colored,contactArm),lower=box(.09*boneScale,ARM_LENGTHS.lower*boneScale,.09*boneScale,0,0,0,colored,contactArm);
     const elbowMarker=ball(.065,0,0,0,joint,contactArm);
     arms[hand]={legacy:arm,contactArm,upper,lower,elbowMarker,shoulder:new THREE.Vector3(sign*.285,1.41,0),sign};
-    if(actor.contacts!==undefined||actor.prop?.type==='key'||actor.handKeys||data.combat)hands[hand]=ball(.065,0,0,0,colored,g);
+    hands[hand]=ball(.065,0,0,0,colored,g);
   }
   if(actor.prop?.type==='block-rifle'){
     box(.18,.13,.6,.06,1.08,-.42,joint,g);box(.05,.05,.38,.06,1.1,-.84,joint,g);
@@ -204,6 +205,18 @@ function updatePathHelpers(){for(const actor of data.actors)pathLines.get(actor.
 function draw(){if(selectedObject)selectionBox.setFromObject(models.get(selectedObject).g);renderer.render(scene,view==='camera'?camera:observer)}
 const limbUp=new THREE.Vector3(0,1,0);
 function setLimb(mesh,a,b){const delta=b.clone().sub(a),length=delta.length();mesh.visible=length>1e-9;if(!mesh.visible)return;mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.scale.y=length;mesh.quaternion.setFromUnitVectors(limbUp,delta.divideScalar(length))}
+function setFixedBone(mesh,from,to){
+  const a=new THREE.Vector3().fromArray(from),b=new THREE.Vector3().fromArray(to),delta=b.clone().sub(a);
+  const orientation=new THREE.Quaternion().setFromUnitVectors(limbUp,delta.normalize());
+  const worldPose=new THREE.Matrix4().compose(a.add(b).multiplyScalar(.5),orientation,new THREE.Vector3(1,1,1));
+  mesh.parent.updateWorldMatrix(true,false);mesh.matrixAutoUpdate=false;
+  mesh.matrix.copy(mesh.parent.matrixWorld).invert().multiply(worldPose);mesh.matrixWorldNeedsUpdate=true;
+}
+function measuredBone(mesh){
+  mesh.updateWorldMatrix(true,false);if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();
+  const start=mesh.localToWorld(new THREE.Vector3(0,mesh.geometry.boundingBox.min.y,0)),end=mesh.localToWorld(new THREE.Vector3(0,mesh.geometry.boundingBox.max.y,0));
+  return {start:start.toArray(),end:end.toArray(),length_m:start.distanceTo(end)};
+}
 function renderAt(t,shotOverride=null){
   time=clamp(Number(t)||0,0,data.duration);
   activeShot=shotOverride??(data.shots.find(s=>time>=s.start&&time<s.end)||data.shots.at(-1));
@@ -217,13 +230,11 @@ function renderAt(t,shotOverride=null){
     for(const leg of model.legs){const swing=Math.sin(phase)*leg.sign;leg.hip.rotation.x=swing*.39*state.walking;leg.knee.rotation.x=Math.max(0,-swing)*.48*state.walking}
     model.g.updateMatrixWorld(true);
     for(const hand of ['left','right']){
-      const target=model.g.worldToLocal(new THREE.Vector3().fromArray(state.hands[hand].position)),arm=model.arms[hand],active=Boolean(state.hands[hand].contact)||Boolean(a.handKeys?.[hand])||a.prop?.type==='key'&&a.prop.hand===hand;
-      arm.legacy.visible=!active;arm.contactArm.visible=active;
-      if(model.hands[hand])model.hands[hand].position.copy(target);
-      if(active){
-        const elbow=arm.shoulder.clone().lerp(target,.5);elbow.x+=arm.sign*.06;elbow.y+=.04;
-        setLimb(arm.upper,arm.shoulder,elbow);setLimb(arm.lower,elbow,target);arm.elbowMarker.position.copy(elbow);
-      }
+      const target=model.g.worldToLocal(new THREE.Vector3().fromArray(state.hands[hand].position)),arm=model.arms[hand],ik=state.hands[hand].ik;
+      arm.legacy.visible=false;arm.contactArm.visible=true;
+      model.hands[hand].position.copy(target);
+      setFixedBone(arm.upper,ik.shoulder,ik.elbow);setFixedBone(arm.lower,ik.elbow,ik.wrist);
+      arm.elbowMarker.position.copy(model.g.worldToLocal(new THREE.Vector3().fromArray(ik.elbow)));
     }
     for(const leg of model.legs){
       const foot=model.feet[leg.foot],target=model.g.worldToLocal(new THREE.Vector3().fromArray(state.feet[leg.foot].position));
@@ -234,7 +245,7 @@ function renderAt(t,shotOverride=null){
     model.shadow.position.set(state.position[0],(bounds.groundY??bounds.min[1])+.012,state.position[2]);
   }
   for(const [id,state] of Object.entries(actions.combat.objects)){
-    const model=combatModels.get(id);model.visible=state.visible;model.position.fromArray(state.position);model.rotation.set(...state.rotation,'XYZ');model.scale.fromArray(state.scale);if(model.userData.lightSource){const supplied=actions.combat.state[id]?.light,settings=typeof supplied==='object'&&supplied?supplied:state.light;model.userData.lightSource.intensity=Number.isFinite(settings?.intensity)?settings.intensity:state.light.intensity;if(typeof settings?.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(settings.color))model.userData.lightSource.color.set(settings.color);}model.updateMatrixWorld(true);
+    const model=combatModels.get(id);model.visible=state.visible;model.position.fromArray(state.position);model.rotation.set(...state.rotation,'XYZ');model.scale.fromArray(state.scale);if(model.userData.lightSource){const supplied=actions.combat.state[id]?.light,settings=typeof supplied==='object'&&supplied?supplied:state.light;model.userData.lightSource.intensity=Number.isFinite(settings?.intensity)?settings.intensity:state.light.intensity;const color=typeof settings?.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(settings.color)?settings.color:state.light.color??state.color;model.userData.lightSource.color.set(color);}model.updateMatrixWorld(true);
   }
   const pose=sampleCamera(activeShot,time);camera.position.fromArray(pose.position);camera.fov=pose.fov;camera.lookAt(...pose.target);camera.updateProjectionMatrix();camera.updateMatrixWorld();
   draw();
@@ -337,7 +348,7 @@ window.PREVIS={
     const actions=sampleActions(data,time);
     const actors=Object.fromEntries(data.actors.map(a=>{
       const model=models.get(a.id),world=mesh=>mesh.getWorldPosition(new THREE.Vector3()).toArray();
-      return [a.id,{...actions.actors[a.id],renderedHands:Object.fromEntries(Object.entries(model.hands).map(([hand,mesh])=>[hand,world(mesh)])),renderedProp:model.keyProp?world(model.keyProp):null,renderedFeet:Object.fromEntries(Object.entries(model.feet).map(([side,foot])=>[side,world(foot.marker)])),geometry:a.geometry??'humanoid',scale:actorScale(a)}];
+      return [a.id,{...actions.actors[a.id],renderedHands:Object.fromEntries(Object.entries(model.hands).map(([hand,mesh])=>[hand,world(mesh)])),renderedArms:Object.fromEntries(Object.entries(model.arms).map(([side,arm])=>[side,{upper:measuredBone(arm.upper),lower:measuredBone(arm.lower)}])),renderedProp:model.keyProp?world(model.keyProp):null,renderedFeet:Object.fromEntries(Object.entries(model.feet).map(([side,foot])=>[side,world(foot.marker)])),geometry:a.geometry??'humanoid',scale:actorScale(a)}];
     }));
     return {time,shotId:activeShot.id,camera:sampleCamera(activeShot,time),doorOpen:actions.door?.open??null,door:actions.door,actions,combat:{...actions.combat,renderedObjects:Object.fromEntries([...combatModels].map(([id,model])=>[id,{position:model.getWorldPosition(new THREE.Vector3()).toArray(),rotation:[model.rotation.x,model.rotation.y,model.rotation.z],scale:model.getWorldScale(new THREE.Vector3()).toArray(),visible:model.visible,kind:actions.combat.objects[id].kind,size:actions.combat.objects[id].size,local_geometry_size:model.userData.localGeometrySize,light:model.userData.lightSource?{intensity:model.userData.lightSource.intensity,color:'#'+model.userData.lightSource.color.getHexString(),visible:model.visible}:null}])),renderedContacts:actions.combat.contacts.map(c=>({...c,target_position:combatModels.get(c.target_id).localToWorld(new THREE.Vector3().fromArray(c.local_point)).toArray(),...(c.object_id?{source_position:combatModels.get(c.object_id).localToWorld(new THREE.Vector3().fromArray(c.source_local_point??[0,0,0])).toArray()}:{})}))},clocks:mapSegmentTime(data,time),actors,pathHelpers:Object.fromEntries([...pathLines].map(([id,line])=>[id,Array.from(line.geometry.attributes.position.array)])),selectedObject,selectionPoint,view};
   }
