@@ -6,8 +6,8 @@ const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
 const hex=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const text=value=>typeof value==='string'&&value.trim().length>0;
 const statuses=new Set(['PASS','CHECKED','FAIL','BLOCKED','PENDING','UNKNOWN','NOT_RUN','NOT_IMPLEMENTED','NOT_APPLICABLE','STALE']);
-export const CHECK_NAMES=['source_structure','text_alignment','render_specs','spatial_proxy','boundary_source','boundary_extraction','boundary_frame','boundary_motion','audio','capability','inputs','platform_submission','final_model'];
-const reviewedNames=new Set(['text_alignment','boundary_frame','boundary_motion','audio','capability','inputs','platform_submission','final_model']);
+export const CHECK_NAMES=['source_structure','text_alignment','render_specs','spatial_proxy','boundary_source','boundary_extraction','boundary_frame','boundary_motion','audio','capability','inputs','platform_submission','final_model','fight_proxy','state_keyframes','attack_response','contact_phase','prop_ownership','persistent_effect','attrition_cost','knowledge_reveal'];
+const reviewedNames=new Set(['text_alignment','boundary_frame','boundary_motion','audio','capability','inputs','platform_submission','final_model','attack_response','contact_phase','prop_ownership','persistent_effect','attrition_cost','knowledge_reveal']);
 const routes=new Set(['LOCAL_IMPLEMENTATION','UPSTREAM_REVISION','PLATFORM_INPUT','REVIEW_REQUIRED']);
 const need=(ok,message)=>{if(!ok)throw new Error('Review contract: '+message)};
 export const checkResult=(status,scope,evidence=[],extra={})=>({status,scope,evidence,...extra});
@@ -104,8 +104,8 @@ export async function boundaryEvidence(root,report,identity,{transitionsCurrent=
 
 export function evaluateDeliveryGoal(goal,checks){
   const selected=goal||{id:'previs',target:'PREVIS'};
-  need(selected&&typeof selected==='object'&&text(selected.id)&&['PREVIS','BOUNDARY_REVIEW','MODEL_SUBMISSION','FINAL_MODEL'].includes(selected.target),'delivery goal needs id and a supported target.');
-  const mandatory={PREVIS:['source_structure','render_specs'],BOUNDARY_REVIEW:['source_structure','render_specs','boundary_source','boundary_extraction','boundary_frame','boundary_motion'],MODEL_SUBMISSION:['source_structure','capability','inputs','platform_submission'],FINAL_MODEL:['source_structure','capability','inputs','platform_submission','final_model']}[selected.target];
+  need(selected&&typeof selected==='object'&&text(selected.id)&&['PREVIS','BOUNDARY_REVIEW','MODEL_SUBMISSION','FINAL_MODEL','FIGHT_PREVIS','FIGHT_REVIEW'].includes(selected.target),'delivery goal needs id and a supported target.');
+  const mandatory={FIGHT_PREVIS:['source_structure','render_specs','fight_proxy'],FIGHT_REVIEW:['source_structure','render_specs','fight_proxy','state_keyframes','attack_response','contact_phase','prop_ownership','persistent_effect','attrition_cost'],PREVIS:['source_structure','render_specs'],BOUNDARY_REVIEW:['source_structure','render_specs','boundary_source','boundary_extraction','boundary_frame','boundary_motion'],MODEL_SUBMISSION:['source_structure','capability','inputs','platform_submission'],FINAL_MODEL:['source_structure','capability','inputs','platform_submission','final_model']}[selected.target];
   need(selected.required_checks===undefined||Array.isArray(selected.required_checks),'required_checks must be an array.');
   const required=[...new Set([...mandatory,...(selected.required_checks||[])])];
   need(required.every(name=>CHECK_NAMES.includes(name)),'delivery goal contains an unknown required check.');

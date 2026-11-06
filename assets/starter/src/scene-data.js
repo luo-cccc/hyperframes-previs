@@ -1,3 +1,4 @@
+import {validateCombatData} from './combat-data.js';
 import {validateActionData,clamp,smooth,lerp,lerpVector} from './action-data.js';
 import {validateTimeMapping} from './time-mapping.js';
 export {clamp,smooth,lerp,lerpVector,samplePath} from './action-data.js';
@@ -18,14 +19,19 @@ export function validateScene(s) {
   if(finite(s.duration)&&finite(s.fps))expect(onFrame(s.duration),'duration must contain a whole number of frames; choose an exact fps. A time mapping records clocks and never rounds the budget.');
   const env=object(s.environment)?s.environment:{};
   expect(object(s.environment),'environment must be an object.');
-  expect(['corridor','dutyroom'].includes(env.type),'Supported environment.type values are corridor and dutyroom.');
-  for(const k of ['width','height','length'])expect(finite(env[k])&&env[k]>0,`environment.${k} must be positive.`);
+  expect(['corridor','dutyroom','battlefield'].includes(env.type),'Supported environment.type values are corridor, dutyroom and battlefield.');
+  if(env.type==='battlefield'){
+    expect(object(env.bounds)&&vector(env.bounds.min)&&vector(env.bounds.max)&&env.bounds.min.every((v,i)=>v<env.bounds.max[i]),'Battlefield environment.bounds requires finite min/max XYZ world bounds.');
+    expect(object(env.ground)&&finite(env.ground.y),'Battlefield environment.ground.y must be an explicit finite world floor height.');
+    expect(vector(env.worldZero),'Battlefield environment.worldZero must be finite XYZ (a declared world landmark).');
+    if(object(env.bounds)&&vector(env.bounds.min)&&vector(env.bounds.max)&&object(env.ground)&&finite(env.ground.y))expect(env.ground.y>=env.bounds.min[1]&&env.ground.y<env.bounds.max[1],'Battlefield ground.y must lie inside explicit bounds.');
+  }else for(const k of ['width','height','length'])expect(finite(env[k])&&env[k]>0,`environment.${k} must be positive.`);
   if(env.type==='corridor')expect(finite(env.doorZ),'environment.doorZ must be finite.');
   if(env.type==='dutyroom'){
     expect(vector(env.floorCenter),'Dutyroom environment.floorCenter must be finite world XYZ metres (the centre of the floor).');
     expect(s.door===null||s.door===undefined||s.door?.type==='hinged-door','Dutyroom doors must explicitly use type=hinged-door.');
   }
-  errors.push(...validateActionData(s),...validateTimeMapping(s));
+  errors.push(...validateActionData(s),...validateTimeMapping(s),...validateCombatData(s));
   const actors=Array.isArray(s.actors)?s.actors:[];
   expect(Array.isArray(s.actors),'actors must be an explicit array; an empty array is valid for a no-character shot.');
   const actorIds=new Set();
@@ -35,6 +41,8 @@ export function validateScene(s) {
     expect(typeof a.id==='string'&&a.id.length>0&&!actorIds.has(a.id),'Actor IDs must be nonempty and unique.');actorIds.add(a.id);
     expect(typeof a.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(a.color),`${label}: color must be #RRGGBB.`);
     expect(finite(a.height)&&a.height>0,`${label}: height must be positive.`);
+    if(a.geometry!==undefined)expect(['humanoid','creature','manifestation'].includes(a.geometry),`${label}: geometry must be humanoid, creature or manifestation.`);
+    if(a.scale!==undefined)expect(finite(a.scale)&&a.scale>0||vector(a.scale)&&a.scale.every(v=>v>0),`${label}: scale must be a positive scalar or positive XYZ vector.`);
     if(a.yaw!==undefined)expect(finite(a.yaw),`${label}: yaw must be a finite angle in radians.`);
     const keys=Array.isArray(a.path)?a.path:[];
     expect(Array.isArray(a.path)&&keys.length>=2,`${label}: path must be an array with at least two keys.`);
@@ -87,7 +95,9 @@ export function validateScene(s) {
 
 /** The same floor-centred box is used by builders and the sampled spatial audit. */
 export function stageBounds(scene){
-  const env=scene.environment,center=env.type==='dutyroom'?env.floorCenter:[0,0,-1];
+  const env=scene.environment;
+  if(env.type==='battlefield')return {min:[...env.bounds.min],max:[...env.bounds.max],groundY:env.ground.y,worldZero:[...env.worldZero],basis:'BATTLEFIELD_EXPLICIT_BOUNDS',openAir:true};
+  const center=env.type==='dutyroom'?env.floorCenter:[0,0,-1];
   return {min:[center[0]-env.width/2,center[1],center[2]-env.length/2],max:[center[0]+env.width/2,center[1]+env.height,center[2]+env.length/2],basis:env.type==='dutyroom'?'DUTYROOM_FLOOR_CENTER':'CORRIDOR_CENTER_Z_MINUS_ONE'};
 }
 

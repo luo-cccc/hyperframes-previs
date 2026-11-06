@@ -50,6 +50,15 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'&&url.pathname==='/__previs/handoff'){
       await bodyJson();const result=await createHandoff(root);json({saved:true,videoStatus:result.videoStatus,goal:result.manifest.delivery_goal});return;
     }
+    if(req.method==='POST'&&url.pathname==='/__previs/fight-check'){
+      await bodyJson();const {checkFightProject}=await import('./fight-check.mjs');const report=await checkFightProject(root);json({saved:true,status:report.status,counts:report.counts});return;
+    }
+    if(req.method==='POST'&&url.pathname==='/__previs/state-capture'){
+      await bodyJson();const {captureStateImages,validateStateCaptureReport}=await import('./keyframe-capture.mjs');
+      const prior=await optionalJson(path.join(root,'review/state-capture-report.json'));
+      if(prior)try{const verified=await validateStateCaptureReport(root,prior);json({saved:true,reused:true,status:verified.status,source_coverage:verified.source_coverage});return}catch{/* Explicit source change requires a fresh named capture. */}
+      const report=await captureStateImages({project:root,out:'review/state-captures/capture-'+Date.now()});json({saved:true,status:report.status,source_coverage:report.source_coverage});return;
+    }
     if(req.method==='POST'&&url.pathname==='/__previs/boundary'){
       await bodyJson();const {exportBoundaryPack}=await import('./boundary-pack.mjs');
       const plan=await optionalJson(path.join(root,'boundary-plan.json'));

@@ -46,10 +46,11 @@ async function initializeStudio(){
     setPlaying(false);lastShot='';pendingCapture=null;annotationPacket=null;
     $('shots').replaceChildren();$('actor').replaceChildren();$('legend').replaceChildren();
     $('capture-preview').hidden=true;$('capture-info').textContent='';
+    $('check-fight').hidden=!scene.combat;$('capture-states').hidden=!scene.combat;
     $('title').textContent=scene.title;$('spec').textContent=`${scene.width} × ${scene.height} · ${scene.fps} fps · ${scene.duration} s`;
     $('timeline').max=scene.duration;$('timeline').step=1/scene.fps;
     for(const s of scene.shots){const b=document.createElement('button');b.dataset.shot=s.id;b.dataset.label=`${s.id}　${s.start}–${s.end} 秒`;b.textContent=b.dataset.label;b.onclick=()=>{setPlaying(false);seek(s.start)};$('shots').appendChild(b)}
-    for(const a of scene.actors){const o=document.createElement('option');o.value=a.id;o.textContent=a.role;$('actor').appendChild(o);const label=document.createElement('span'),dot=document.createElement('i');dot.className='dot';dot.style.background=a.color;label.append(dot,document.createTextNode(`${a.role} / ${a.id}`));$('legend').appendChild(label)}
+    for(const a of scene.actors){const o=document.createElement('option');o.value=a.id;o.textContent=a.role||a.name||a.id;$('actor').appendChild(o);const label=document.createElement('span'),dot=document.createElement('i');dot.className='dot';dot.style.background=a.color;label.append(dot,document.createTextNode(`${a.role||a.name||a.id} / ${a.id}`));$('legend').appendChild(label)}
     if(scene.actors.length)pathKeys();else $('actor').closest('.panel').hidden=true;
     frame.contentWindow.addEventListener('previs-select',event=>{
       const selected=event.detail;setPlaying(false);$('selection').textContent=`对象：${selected.objectId||'画面位置'} · ${selected.shotId} · ${selected.time.toFixed(3)} 秒 · (${selected.point.x.toFixed(3)}, ${selected.point.y.toFixed(3)})`;
@@ -122,7 +123,7 @@ $('check-spatial').onclick=()=>action(async()=>{
 });
 window.addEventListener('beforeunload',event=>{if(api?.dirtyShots.length){event.preventDefault();event.returnValue=''}});
 
-const checkLabels={source_structure:'来源与结构',text_alignment:'母稿对齐',render_specs:'视频规格',spatial_proxy:'代理空间',boundary_source:'接点来源',boundary_extraction:'接点提取',boundary_frame:'接点画面',boundary_motion:'接点运动',audio:'声音',capability:'平台能力',inputs:'实际输入',platform_submission:'平台提交',final_model:'最终媒体'};
+const checkLabels={source_structure:'来源与结构',text_alignment:'母稿对齐',render_specs:'视频规格',spatial_proxy:'代理空间',boundary_source:'接点来源',boundary_extraction:'接点提取',boundary_frame:'接点画面',boundary_motion:'接点运动',audio:'声音',capability:'平台能力',inputs:'实际输入',platform_submission:'平台提交',final_model:'最终媒体',fight_proxy:'战斗代理抽查',state_keyframes:'原时刻状态图',attack_response:'攻防因果',contact_phase:'接触相位',prop_ownership:'器物归属',persistent_effect:'持续术法',attrition_cost:'代价与地形',knowledge_reveal:'真假与揭示'};
 const resultLabels={PASS:'通过',CHECKED:'已检查',FAIL:'未通过',BLOCKED:'受阻',PENDING:'待补充',UNKNOWN:'未知',NOT_RUN:'未检查',NOT_IMPLEMENTED:'未实现',NOT_APPLICABLE:'不适用',STALE:'需重新核对'};
 async function refreshDelivery(){
   const data=await projectApi('./__previs/delivery'),host=$('delivery-checks');host.replaceChildren();
@@ -137,4 +138,10 @@ $('build-boundary').onclick=()=>action(async()=>{
   setPlaying(false);if(api?.dirtyShots.length)throw new Error('请先保存或撤销机位草稿，再提取与正式视频一致的接点证据。');
   $('build-boundary').disabled=true;
   try{await projectApi('./__previs/boundary',{});await projectApi('./__previs/handoff',{});await refreshDelivery();message('接点证据已提取；画面、运动与声音仍需按实际范围分别检查。')}finally{$('build-boundary').disabled=false}
+});
+
+$('check-fight').onclick=()=>action(async()=>{setPlaying(false);if(!api?.savedData.combat)throw new Error('当前工程未声明战斗代理；不能把普通布局视为已实现打斗。');const result=await projectApi('./__previs/fight-check',{});message('战斗代理已抽查：'+result.status+'。范围仅为身份、归属与声明接点，不等于攻防、受力或媒体通过。');await refreshDelivery()});
+$('capture-states').onclick=()=>action(async()=>{
+  setPlaying(false);if(api?.dirtyShots.length)throw new Error('请先保存或撤销草稿，再捕获与原时刻、原镜头一致的状态。');$('capture-states').disabled=true;
+  try{const result=await projectApi('./__previs/state-capture',{});message('原时刻状态图已保存：'+result.status+'。独立状态PNG不是MP4抽帧；完整覆盖：'+(result.source_coverage?.status||'未绑定源帧'));await refreshDelivery()}finally{$('capture-states').disabled=false}
 });

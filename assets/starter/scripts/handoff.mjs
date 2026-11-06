@@ -8,6 +8,8 @@ import {sourceContext} from './source-context.mjs';
 import {renderSceneText} from '../src/render-identity.js';
 import {writeAtomic} from './atomic-file.mjs';
 import {ADAPTER_VERSION} from './adapter-version.mjs';
+import {sourceLineage,isFightPacket,fightReceiptMap} from './source-lineage.mjs';
+import {validateStateCaptureReport} from './keyframe-capture.mjs';
 import {optionalJson,checkResult,scopedReview,boundaryEvidence,evaluateDeliveryGoal,revisionRequests} from './review-receipt.mjs';
 
 export async function createHandoff(root,{publish=true}={}){
@@ -15,7 +17,7 @@ export async function createHandoff(root,{publish=true}={}){
   const destination=path.join(root,'handoff');
   const sceneBytes=await readFile(path.join(root,'scene.json')),scene=JSON.parse(sceneBytes.toString('utf8'));
   const problems=validateScene(scene);if(problems.length)throw new Error(problems.join('\n'));
-  const upstream=await checkUpstream(root,scene),context=await sourceContext(root,upstream);
+  const upstream=await checkUpstream(root,scene),context=await sourceContext(root,upstream),fight=isFightPacket(upstream?.packet),sourceInfo=sourceLineage(upstream,scene);
   let videoExists=false;
   try{videoExists=(await stat(path.join(root,'renders/previs.mp4'))).isFile()}catch(error){if(error.code!=='ENOENT')throw error}
   const [receipt,review,spatialReport,boundaryReport,goalInput]=await Promise.all([
@@ -33,8 +35,15 @@ export async function createHandoff(root,{publish=true}={}){
   const boundary=await boundaryEvidence(root,boundaryReport,identity,{transitionsCurrent});
   const reviewed=await scopedReview(root,review,identity,{fresh,transitionsCurrent:boundary.status==='CURRENT',boundaryCurrent:boundary.status==='CURRENT',boundaryIdentity:boundaryReport?.identity||null,goal:goalInput||scene.deliveryGoal||null});
   const fileEvidence=async file=>({path:file,sha256:sha256(await readFile(path.join(root,file))),kind:'FILE'});
+  const fightImplementation=fight?await optionalJson(path.join(root,'fight-implementation.json')):null;
+  const fightReport=await optionalJson(path.join(root,'review/fight-report.json'));
+  const fightCurrent=Boolean(scene.combat&&fightReport?.schema_version==='PREVIS_FIGHT_REPORT_V1'&&['scene_sha256','intake_sha256','render_inputs_sha256'].every(key=>fightReport[key]===identity[key]));
+  const stateReport=await optionalJson(path.join(root,'review/state-capture-report.json'));
+  let states={status:'NOT_RUN',reason:'No independently rendered source-keyframe states.'};
+  if(stateReport)try{states=await validateStateCaptureReport(root,stateReport)}catch(error){states={status:'STALE',reason:error.message}}
+
   const checks={
-    source_structure:checkResult('PASS',upstream?'Selected upstream sources, formal/prompt/budget lineage, scene timing and actor/asset structure; no narrative acceptance.':'Explicit standalone demonstration scene structure; no upstream production authority.',[await fileEvidence('scene.json'),...(upstream?[await fileEvidence(path.relative(root,upstream.file))]:[])]),
+    source_structure:checkResult('PASS',upstream?'Selected provider source, original unit lineage, scene timing and actor/asset structure; no narrative acceptance.':'Explicit standalone demonstration scene structure; no upstream production authority.',[await fileEvidence('scene.json'),...(upstream?[await fileEvidence(path.relative(root,upstream.file))]:[])]),
     text_alignment:checkResult('NOT_RUN','Narrative, exact dialogue and intended photography need actual scoped review.'),
     render_specs:fresh?checkResult(receipt.media_metrics_status==='CHECKED'?'PASS':'NOT_RUN','Successful current MP4 dimensions, fps, duration and frame count; exact media metrics require ffprobe.',[await fileEvidence('renders/render-receipt.json')]):checkResult(videoExists?'STALE':'NOT_RUN','No current successful video is linked to these saved inputs.'),
     spatial_proxy:checkResult(spatialCurrent?(spatialReport.status==='NO_ISSUES_OBSERVED'?'PASS':'CHECKED'):'NOT_RUN','Sampled proxy geometry only; no skeletal/pixel visibility or complete narrative acceptance.',spatialCurrent?[await fileEvidence('review/spatial-report.json')]:[],spatialCurrent?{warnings:spatialReport.counts?.issueGroups||0}:{}),
@@ -47,10 +56,18 @@ export async function createHandoff(root,{publish=true}={}){
     inputs:checkResult('NOT_RUN','Actual platform inputs and their binding roles require scoped verification.'),
     platform_submission:checkResult('NOT_RUN','No actual provider submission was performed by the local previs tool.'),
     final_model:checkResult('NOT_RUN','Local proxy rendering does not establish final-model media quality.'),
+    fight_proxy:checkResult(fightImplementation?.status==='PARTIAL_LAYOUT_ONLY'?'NOT_IMPLEMENTED':fightCurrent?(fightReport.status==='NO_ISSUES_OBSERVED'?'PASS':'FAIL'):'NOT_RUN','Declared combat object identity, ownership and contact-gap samples; not attack causality, anatomical reach or final video acceptance.',fightCurrent?[await fileEvidence('review/fight-report.json')]:[],fightCurrent?{warnings:fightReport.counts.issueGroups}:{}),
+    state_keyframes:checkResult(states.status==='CURRENT'&&(!fight||states.source_coverage?.status==='COMPLETE')?'PASS':states.status==='STALE'?'STALE':'NOT_RUN','Explicit source keyframe states rendered with the original selected camera, including closed-interval endpoints; no encoded-MP4-frame claim.',states.status==='CURRENT'?[await fileEvidence('review/state-capture-report.json')]:[],states.reason?{reason:states.reason}:{}),
+    attack_response:checkResult('NOT_RUN','Authored attack, response and result need actual scoped narrative/motion observation.'),
+    contact_phase:checkResult('NOT_RUN','Preparation, impact and result timing and body support need actual visual/motion review; proxy coincidence is not force verification.'),
+    prop_ownership:checkResult('NOT_RUN','Visible unique prop identity, ownership, hand changes and recovery need observed media evidence.'),
+    persistent_effect:checkResult('NOT_RUN','Persistent spells, trajectories, nodes and light must be reviewed within their actual implementation scope.'),
+    attrition_cost:checkResult('NOT_RUN','Authored irreversible costs, injuries and accumulating terrain constraints need semantic and visual review.'),
+    knowledge_reveal:checkResult('NOT_RUN','Actual truth, character belief and spectator reveal order need source-scoped review.'),
     ...reviewed.checks
   };
-  const goal=evaluateDeliveryGoal(goalInput||scene.deliveryGoal,checks);
-  const lineage={project_id:upstream?.packet.project_id||scene.id,formal_id:upstream?.packet.formal_id||null,prompt_version:upstream?.packet.prompt_version||null,budget_version:upstream?.packet.budget_version||null,...identity};
+  const goal=evaluateDeliveryGoal(goalInput||scene.deliveryGoal||(fight?{id:'fight-previs-'+sourceInfo.unit_id,target:'FIGHT_PREVIS'}:undefined),checks);
+  const lineage={...sourceInfo,project_id:upstream?.packet.project_id||scene.id,formal_id:upstream?.packet.formal_id||null,prompt_version:upstream?.packet.prompt_version||null,budget_version:upstream?.packet.budget_version||null,...identity};
   const revisions=revisionRequests(reviewed.findings,goal,lineage);
   const legacyEvidence=typeof review?.evidence==='string'?review.evidence.trim():Array.isArray(review?.evidence)&&review.evidence.some(value=>typeof value==='string'&&value.trim());
   const legacyCurrent=Boolean(fresh&&review?.schema_version==='PREVIS_REVIEW_V1'&&['CHECKED','PASS','FAIL'].includes(review.status)&&legacyEvidence&&Object.entries(identity).every(([key,value])=>review[key]===value));
@@ -60,7 +77,7 @@ export async function createHandoff(root,{publish=true}={}){
     actors:scene.actors.map(actor=>({id:actor.id,role:actor.role,previsColor:actor.color,...(scene.assetBindings?.find(binding=>binding.actorId===actor.id)||{appearanceReference:null,referenceStatus:'unbound'})})),
     sceneReference:null,shots:scene.shots,upstream:scene.upstream||null,sourceContext:context,spatial,
     sourceReferenceBase:upstream?path.relative(destination,upstream.file).replaceAll(path.sep,'/'):null,
-    adaptationMap:scene.adaptationMap||null,upstream_provenance:upstream?.packet.upstream_provenance||null,
+    source_lineage:sourceInfo,fightClock:scene.fightClock||null,adaptationMap:scene.adaptationMap||null,upstream_provenance:upstream?.packet.upstream_provenance||null,
     transitions,boundary:{status:boundary.status,reason:boundary.reason,report:boundary.report?'../review/boundary-report.json':null,viewer:boundary.report?'../'+boundary.report.package_directory+'/index.html':null},
     timeMapping:scene.timeMapping||null,checks,delivery_goal:goal,revision_requests:'revision-requests.json',
     scope:'Camera, proxy action, relative space, timing and selected boundary reference. Appearance, sound and platform control retain their separate checks.'
@@ -68,10 +85,10 @@ export async function createHandoff(root,{publish=true}={}){
   const result={
     ...(fresh?receipt:{render_status:videoStatus}),scope:'PREVIS_CAMERA_BLOCKING',adapter_version:ADAPTER_VERSION,
     formal_id:lineage.formal_id,base_prompt_version:lineage.prompt_version,budget_version:lineage.budget_version,
-    source_time_basis:'SEGMENT',sources:upstream?.packet.sources||[],sourceContext:context,structural_checks:'PASS',...identity,
+    source_time_basis:'SEGMENT',source_lineage:sourceInfo,unit:upstream?.packet.unit||null,sources:upstream?.packet.sources||[],sourceContext:context,structural_checks:'PASS',...identity,
     semantic_review:legacyCurrent?review:reviewed.checks.text_alignment||'NOT_RUN',review_reuse_status:legacyCurrent?'CURRENT':reviewed.status,
-    scoped_review:reviewed,checks,delivery_goal:goal,transitions,boundary:manifest.boundary,timeMapping:scene.timeMapping||null,
-    unimplemented:reviewed.status==='CURRENT'&&Array.isArray(review?.unimplemented)?review.unimplemented:legacyCurrent?review.unimplemented||[]:['Detailed action, original speech/audio and final-model performance retain their actual separate check status.'],
+    scoped_review:reviewed,checks,delivery_goal:goal,transitions,boundary:manifest.boundary,fight_proxy:{status:fightCurrent?fightReport.status:'NOT_RUN_OR_STALE',report:fightCurrent?'../review/fight-report.json':null},state_captures:{status:states.status,report:states.status==='CURRENT'?'../review/state-capture-report.json':null},timeMapping:scene.timeMapping||null,
+    unimplemented:fightImplementation?[...(fightImplementation.not_implemented||[]),{capability:'Source implementation assumptions and visual acceptance remain separately reviewed.',status:'NOT_RUN'}]:reviewed.status==='CURRENT'&&Array.isArray(review?.unimplemented)?review.unimplemented:legacyCurrent?review.unimplemented||[]:['Detailed action, original speech/audio and final-model performance retain their actual separate check status.'],
     upstream_revision_required:revisions.requests.some(item=>item.route==='UPSTREAM_REVISION')?true:legacyCurrent&&typeof review.upstream_revision_required==='boolean'?review.upstream_revision_required:null,
     revision_requests:revisions,spatial,final_model_media_review:checks.final_model.status,upstream_writes:false
   };
@@ -79,7 +96,12 @@ export async function createHandoff(root,{publish=true}={}){
   const csv='\uFEFF'+[['id','start_s','end_s','duration_s','beat'],...scene.shots.map(shot=>[shot.id,shot.start,shot.end,shot.end-shot.start,shot.beat])].map(row=>row.map(quote).join(',')).join('\r\n');
   const outputs=new Map([['shots.csv',csv],['checks.json',JSON.stringify({schema_version:'PREVIS_CHECKS_V1',...identity,checks,delivery_goal:goal},null,2)+'\n'],['revision-requests.json',JSON.stringify(revisions,null,2)+'\n'],['previs-receipt.json',JSON.stringify(result,null,2)+'\n']]);
   const binding=scene.actors.map(actor=>'- '+actor.id+'（'+actor.role+'）：预演色标 '+actor.color+'；上游资产 '+(scene.assetBindings?.find(item=>item.actorId===actor.id)?.assetId||'未绑定')+'。').join('\n');
-  if(upstream){
+  if(fight){
+    outputs.set('source-execution.md',upstream.packet.master.text);
+    outputs.set('fight-map.json',JSON.stringify(fightReceiptMap(upstream.packet,scene),null,2)+'\n');
+    outputs.set('source-keyframes.json',JSON.stringify(upstream.packet.keyframes||upstream.packet.selection?.keyframes||[],null,2)+'\n');
+    outputs.set('reference-attachments.md','# 仙侠战斗预演参考\n\n来源：'+sourceInfo.provider+'；制作段：'+sourceInfo.unit_id+'。\n\n'+binding+'\n\nsource-execution.md 是来源接收包的执行文本视图；其原文/整理方式和证据来源保留在intake，不把它提升为已生成或已验收媒体。fight-map.json 保留全场到段内时钟与原镜号。原关键帧提示词、独立状态图和MP4抽帧分别记录。\n\n用户目标：'+goal.status+'。代理接触、器物和效果不证明真实骨骼、受力、语义或声音通过。\n');
+  }else if(upstream){
     outputs.set('prompts.md',upstream.packet.master.text);
     outputs.set('reference-attachments.md','# 三维预演参考附件\n\n正式段：'+lineage.formal_id+'；母稿：'+lineage.prompt_version+'；预算：'+lineage.budget_version+'。\n\n'+binding+'\n\n预演承载已实现的机位、代理动作与空间，不继承占位外观或审片控件。prompts.md 保留上游母稿原文；素材、能力、声音及最终模型检查见 checks.json。\n\n视频状态：'+videoStatus+'。用户目标：'+goal.status+'。条件计划、参考包与真实提交分别记录；本工具没有推进上游覆盖。\n');
     outputs.set('adaptation-map.json',JSON.stringify(scene.adaptationMap,null,2)+'\n');

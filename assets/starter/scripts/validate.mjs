@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { validateScene } from '../src/scene-data.js';
 import { checkUpstream } from './check-upstream.mjs';
+import {sourceLineage} from './source-lineage.mjs';
 
 const root=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
 export function compositionHtml(html,s){
@@ -18,5 +19,5 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
   const file=path.join(root,'index.html'),html=await readFile(file,'utf8'),next=compositionHtml(html,s);
   if(html!==next)await writeFile(file,next,'utf8');
   console.log(`Validated ${s.shots.length} shots, ${s.actors.length} actors, ${s.duration}s / ${s.width}x${s.height} / ${s.fps}fps.`);
-  if(upstream)console.log(`Upstream ${upstream.packet.formal_id}/${upstream.packet.prompt_version}: source, timing and asset structure checked; semantic/media review remains separate.`);
+  if(upstream){const source=sourceLineage(upstream,s);console.log(`Upstream ${source.provider}/${source.unit_id}: source, timing and asset structure checked; semantic/media review remains separate.`);}
 }

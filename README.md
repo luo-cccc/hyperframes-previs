@@ -1,10 +1,12 @@
 # HyperFrames 分镜预演适配 Skill
 
-当前版本：**0.5.0**。技能入口：[SKILL.md](SKILL.md)。
+当前版本：**0.6.0**。技能入口：[SKILL.md](SKILL.md)。
 
 接收 [script-to-storyboard-prompts](https://github.com/luo-cccc/script-to-storyboard-prompts) 已交付的有效正式母稿、同版预算、人物/场景/道具资产与首尾状态，制作可编辑的 Three.js 三维预演，再通过 HyperFrames 逐帧导出参考视频。
 
 保留上游段号、镜序、时码、台词与来源版本。它是可选的下游媒体适配，不重跑上游七步，不推进上游制作覆盖或原文游标。
+
+新增 `xianxia-fight-director` 第二上游：接收战斗六件套或工作JSON 1.1/1.2，保留全场/段内时钟、节拍与关键帧ID，提供战斗代理、独立状态图和分范围回执。旧storyboard入口保留。详见 [战斗接入](references/fight-adapter.md)。
 
 ## 能力
 
@@ -15,6 +17,7 @@
 - 干净 MP4、原母稿副本、参考附加说明、独立反馈包和可移动证据工程。
 - 上游 0.4.1 的路径别名、TEXT 检查范围和按正式段选择的转场依赖；旧 V2 工程按原语义复核。
 - 铰链门动作相位、手部代理接触、相机关键点、三时钟映射及实际视频接点证据包。
+- 战斗对象持物／离手／接触、资源消耗、持续术法、真假揭示与非人尺度代理；原时刻关键状态独立捕获。
 - 分项 status/scope/evidence、目标完成状态与本地/上游/平台返修归责。
 
 画面批注的待处理、已处理与附证据验收分开；旧来源自动标过期。代理检查没有警告不等于完整媒体验收，预演也不保证下游模型精确跟随。
@@ -58,6 +61,7 @@ node scripts/create_project.mjs /path/to/demo --demo
 | 渲染、来源指纹与失败处理 | [runtime.md](references/runtime.md) |
 | 返回视频模型的参考包 | [handoff.md](references/handoff.md) |
 | 接点、动作相位与时钟 | [boundary-previs.md](references/boundary-previs.md) |
+| 仙侠战斗源与代理 | [fight-adapter.md](references/fight-adapter.md) |
 | 分项回执与返修归责 | [scoped-receipts.md](references/scoped-receipts.md) |
 | 可移动工程与冻结证据 | [portable-bundle.md](references/portable-bundle.md) |
 | 采纳的设计与暂缓能力 | [adopted-designs.md](references/adopted-designs.md) |
@@ -65,6 +69,7 @@ node scripts/create_project.mjs /path/to/demo --demo
 | 60 fps 实测记录 | [60fps-smoke-2026-11-05.md](evals/60fps-smoke-2026-11-05.md) |
 | 用户模拟与修复回归 | [user-simulation-2026-11-06.md](evals/user-simulation-2026-11-06.md) |
 | 0.5.0 三批落地验收 | [0.5.0-three-batch-acceptance.md](evals/0.5.0-three-batch-acceptance.md) |
+| 0.6.0 战斗接入、媒体与独立模拟 | [0.6.0-fight-three-batch-acceptance.md](evals/0.6.0-fight-three-batch-acceptance.md) |
 
 ## 运行与验证边界
 
@@ -83,3 +88,7 @@ node scripts/check_project.mjs --report outputs/checks.json
 该命令运行仓库内 Node/Python 契约测试，需要 Node.js、Python 以及媒体测试使用的 FFmpeg/ffprobe。真实浏览器使用、实际视频和用户输入语义仍按独立记录核验。接点联合演示：`node scripts/create_dutyroom_example.mjs outputs/dutyroom-demo`，生成独立的 F1/F2 测试工程。
 
 0.5.0 已完成冻结源码的 **206 项回归（0 失败、0 跳过）**、两段 60 fps 实际导出与独立用户模拟；详细范围、初始失败闭环、声音缺项及测试隔离偏差见上述三批验收记录，不代表最终平台媒体已生成或通过。
+
+战斗源示例从用户提供的真实JSON创建，不把上游全文打包进本仓库：`node scripts/create_fight_example.mjs outputs/fight-demo --project <已有战斗JSON>`。单元内依次运行 `npm run fight-check`、`npm run render`、`npm run state-capture`、`npm run boundary-pack`、`npm run handoff`，媒体与语义各按实际范围记录。
+
+0.6.0 完成 **449 项回归（0 失败、0 跳过）**，四类战斗的 12 段 60fps MP4 共 137 秒／8,220 帧、51 张原时刻状态 PNG 和 33 组实际视频接点。代理几何仍有 10 组保守告警，相关 5 段的 FIGHT_PREVIS 保持 BLOCKED；音频、骨骼受力、最终身份与模型语义未被自动验收。详见 0.6.0 验收记录。

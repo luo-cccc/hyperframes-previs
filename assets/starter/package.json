@@ -14,7 +14,9 @@
     "feedback": "node scripts/feedback-export.mjs",
     "render": "node scripts/render.mjs",
     "handoff": "node scripts/handoff.mjs",
-    "boundary-pack": "node scripts/boundary-pack.mjs"
+    "boundary-pack": "node scripts/boundary-pack.mjs",
+    "state-capture": "node scripts/keyframe-capture.mjs",
+    "fight-check": "node scripts/fight-check.mjs"
   },
   "dependencies": {
     "hyperframes": "0.9.10",

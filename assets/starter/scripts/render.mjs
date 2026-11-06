@@ -9,6 +9,7 @@ import { writeJsonAtomic } from './atomic-file.mjs';
 import { sourceContext } from './source-context.mjs';
 import {renderSceneText} from '../src/render-identity.js';
 import {ADAPTER_VERSION} from './adapter-version.mjs';
+import {sourceLineage} from './source-lineage.mjs';
 const root=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
 const options=process.argv.slice(2),extra=[];
 for(let i=0;i<options.length;i++){
@@ -45,7 +46,7 @@ try{
     const stream=streams[0],[n,d]=String(stream.r_frame_rate).split('/').map(Number),fps=n/d;
     if(stream.width!==scene.width||stream.height!==scene.height||Math.abs(fps-scene.fps)>.0001||Number(stream.nb_frames)!==Math.round(scene.duration*scene.fps)||Math.abs(Number(metrics.format.duration)-scene.duration)>.5/scene.fps)throw new Error('Exported duration, dimensions, fps or frame count differs from the declared scene.');
   }else if(!probe.error&&probe.status!==0)throw new Error('ffprobe failed to inspect the exported media: '+probe.stderr);
-  const receipt={type:'PREVIS_RENDER',render_identity:'PREVIS_RENDER_CONTENT_V2',scope:'PREVIS_CAMERA_BLOCKING',adapter_version:ADAPTER_VERSION,attempt_id:id,render_status:'COMPLETED',source_time_basis:'SEGMENT',sourceContext:context,rendered_at:new Date().toISOString(),scene_sha256:sha256(renderSceneText(scene)),scene_file_sha256:sha256(sceneBytes),render_inputs_sha256:fingerprint.sha256,render_inputs:fingerprint.files,intake_sha256:upstream?.intakeSha256||null,formal_id:upstream?.packet.formal_id||null,base_prompt_version:upstream?.packet.prompt_version||null,budget_version:upstream?.packet.budget_version||null,video:'previs.mp4',video_sha256:sha256(await readFile(staged)),metrics,media_metrics_status:metrics?'CHECKED':'NOT_RUN',source_duration_s:scene.duration,semantic_review:'NOT_RUN',final_model_media_review:'NOT_RUN',upstream_writes:false};
+  const receipt={type:'PREVIS_RENDER',render_identity:'PREVIS_RENDER_CONTENT_V2',scope:'PREVIS_CAMERA_BLOCKING',adapter_version:ADAPTER_VERSION,attempt_id:id,render_status:'COMPLETED',source_time_basis:'SEGMENT',source_lineage:sourceLineage(upstream,scene),sourceContext:context,rendered_at:new Date().toISOString(),scene_sha256:sha256(renderSceneText(scene)),scene_file_sha256:sha256(sceneBytes),render_inputs_sha256:fingerprint.sha256,render_inputs:fingerprint.files,intake_sha256:upstream?.intakeSha256||null,formal_id:upstream?.packet.formal_id||null,base_prompt_version:upstream?.packet.prompt_version||null,budget_version:upstream?.packet.budget_version||null,video:'previs.mp4',video_sha256:sha256(await readFile(staged)),metrics,media_metrics_status:metrics?'CHECKED':'NOT_RUN',source_duration_s:scene.duration,semantic_review:'NOT_RUN',final_model_media_review:'NOT_RUN',upstream_writes:false};
   try{await rename(video,previous);oldMoved=true}catch(error){if(error.code!=='ENOENT')throw error}
   try{await rename(staged,video);await writeJsonAtomic(path.join(directory,'render-receipt.json'),receipt);published=true}
   catch(error){

@@ -2,6 +2,7 @@ import { readFile, access } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { collectTransitionContext, checkTransitionContext, resolveSourceScriptRef } from './transition-context.mjs';
+import {checkFightUpstream} from './fight-source.mjs';
 
 export const sha256=data=>createHash('sha256').update(data).digest('hex');
 const near=(a,b)=>typeof a==='number'&&typeof b==='number'&&Math.abs(a-b)<1e-6;
@@ -141,6 +142,8 @@ export async function checkUpstream(root,scene){
   expect(typeof u.intake==='string'&&u.intake,'missing intake path.');
   const file=path.resolve(root,u.intake),bytes=await readFile(file),packet=strictJson(bytes.toString('utf8'),'intake JSON');
   expect(sha256(bytes)===u.intake_sha256,'intake changed; review the new source and bind a new adapter revision.');
+  if(packet.schema_version==='PREVIS_FIGHT_ADAPTER_V1'||u.provider==='xianxia-fight-director')return checkFightUpstream(root,scene);
+  expect(!u.provider||u.provider==='script-to-storyboard-prompts','source provider does not match this intake.');
   expect(packet.schema_version==='STORYBOARD_PREVIS_ADAPTER_V1','unsupported intake contract.');
   expect(packet.upstream_writes===false,'intake must explicitly preserve read-only upstream access.');
   for(const field of ['project_id','formal_id','prompt_version','budget_version'])expect(u[field]===packet[field],`${field} differs from the intake.`);

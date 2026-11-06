@@ -1,3 +1,5 @@
+import {sampleActions} from './action-data.js';
+import {actorDimensions,combatPointToWorld} from './combat-data.js';
 import {validateScene,samplePath,sampleCamera,stageBounds} from './scene-data.js';
 
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
@@ -21,6 +23,7 @@ function validateAuditInput(scene,options){
   if(!object(spatial))invalid(['scene.spatial must be an object when provided.']);
   const errors=[],expect=(ok,message)=>{if(!ok)errors.push(message)};
   const ids=new Set(scene.actors.map(actor=>actor.id));
+  const combatIds=new Set((scene.combat?.objects??[]).map(item=>item.id));
   for(const actor of scene.actors)if(actor.radius!==undefined)expect(finite(actor.radius)&&actor.radius>0,`${actor.id}: radius must be positive metres.`);
   if(spatial.checkOcclusion!==undefined)expect(typeof spatial.checkOcclusion==='boolean','spatial.checkOcclusion must be a boolean.');
   if(options.checkOcclusion!==undefined)expect(typeof options.checkOcclusion==='boolean','options.checkOcclusion must be a boolean.');
@@ -36,7 +39,8 @@ function validateAuditInput(scene,options){
     if(shot.framing===undefined)continue;
     if(!object(shot.framing)){errors.push(`${shot.id}: framing must be an object.`);continue}
     const framing=shot.framing;
-    expect(Array.isArray(framing.requiredActors)&&framing.requiredActors.every(id=>typeof id==='string'&&ids.has(id))&&new Set(framing.requiredActors).size===framing.requiredActors.length,`${shot.id}: requiredActors must contain unique existing actor IDs.`);
+    expect((framing.requiredActors===undefined&&Array.isArray(framing.requiredObjects))||Array.isArray(framing.requiredActors)&&framing.requiredActors.every(id=>typeof id==='string'&&ids.has(id))&&new Set(framing.requiredActors).size===framing.requiredActors.length,`${shot.id}: requiredActors must contain unique existing actor IDs.`);
+    if(framing.requiredObjects!==undefined)expect(Array.isArray(framing.requiredObjects)&&framing.requiredObjects.every(id=>combatIds.has(id))&&new Set(framing.requiredObjects).size===framing.requiredObjects.length,`${shot.id}: requiredObjects must contain unique existing combat object IDs.`);
     if(framing.mode!==undefined)expect(['center','full'].includes(framing.mode),`${shot.id}: framing.mode must be center or full.`);
     if(framing.margin!==undefined)expect(finite(framing.margin)&&framing.margin>=0&&framing.margin<.5,`${shot.id}: framing.margin must be in [0,0.5).`);
   }
@@ -113,12 +117,12 @@ export function auditScene(scene,options={}){
   };
   for(let sampleIndex=0;sampleIndex<frames.length;sampleIndex++){
     const frame=frames[sampleIndex],time=frame/scene.fps,shot=scene.shots.find(item=>time>=item.start&&time<item.end)||scene.shots.at(-1),events=checkStart(frame,sampleIndex,shot);
-    const states=scene.actors.map(actor=>({id:actor.id,height:actor.height,radius:actor.radius??.22,position:samplePath(actor.path,time).position}));
+    const states=scene.actors.map(actor=>({id:actor.id,...actorDimensions(actor),position:samplePath(actor.path,time).position}));
     const pose=sampleCamera(shot,time),basis=cameraBasis(pose);
     for(const actor of states){
       const [x,y,z]=actor.position;
-      if(y<bounds.min[1]-config.tolerance)events.add('ACTOR_BELOW_FLOOR',[actor.id],{position:actor.position,floorY:bounds.min[1],tolerance_m:config.tolerance});
-      if(y+actor.height>bounds.max[1]+config.tolerance)events.add('ACTOR_ABOVE_CEILING',[actor.id],{topY:y+actor.height,ceilingY:bounds.max[1]});
+      if(y<(bounds.groundY??bounds.min[1])-config.tolerance)events.add('ACTOR_BELOW_FLOOR',[actor.id],{position:actor.position,floorY:bounds.groundY??bounds.min[1],tolerance_m:config.tolerance});
+      if(y+actor.height>bounds.max[1]+config.tolerance)events.add(bounds.openAir?'ACTOR_ABOVE_DECLARED_AIRSPACE':'ACTOR_ABOVE_CEILING',[actor.id],{topY:y+actor.height,ceilingY:bounds.max[1]});
       if(x-actor.radius<bounds.min[0]-config.tolerance||x+actor.radius>bounds.max[0]+config.tolerance||z-actor.radius<bounds.min[2]-config.tolerance||z+actor.radius>bounds.max[2]+config.tolerance)events.add('ACTOR_OUTSIDE_STAGE',[actor.id],{position:actor.position,radius_m:actor.radius,bounds:{min:bounds.min,max:bounds.max}});
       for(const obstacle of config.obstacles)if(cylinderIntersectsBox(actor,obstacle,config.tolerance))events.add('ACTOR_INTERSECTS_OBSTACLE',[actor.id],{position:actor.position,proxyRadius_m:actor.radius,obstacle:{min:obstacle.min,max:obstacle.max}},{obstacleId:obstacle.id});
     }
@@ -130,7 +134,7 @@ export function auditScene(scene,options={}){
     if(!basis){events.add('CAMERA_DIRECTION_UNDEFINED',[],{position:pose.position,target:pose.target});events.finish();continue}
     if(basis.verticalFallback)verticalProjectionFallback=true;
     const framing=shot.framing;
-    if(framing)for(const actorId of framing.requiredActors){
+    if(framing)for(const actorId of framing.requiredActors??[]){
       const actor=states.find(item=>item.id===actorId),mode=framing.mode??'center',margin=framing.margin??.02;
       const points=framingPoints(actor,mode),projected=points.map(point=>project(point,pose,basis,scene.width/scene.height,config.near));
       const failed=projected.filter(point=>!point.inFront||point.screen.some(value=>value<margin||value>1-margin));
@@ -146,12 +150,19 @@ export function auditScene(scene,options={}){
     }
     events.finish();
   }
+  const combatAudit=scene.combat?auditCombat(scene,options):null;
+  const combatIssues=(combatAudit?.issues??[]).map(issue=>({...issue,actorIds:issue.objectIds.filter(id=>scene.actors.some(actor=>actor.id===id)),origin:'COMBAT_PROXY'}));
+  const combinedIssues=[...issues,...combatIssues],combinedByCode={...byCode};
+  for(const issue of combatIssues)combinedByCode[issue.code]=(combinedByCode[issue.code]??0)+issue.observations;
+  const issueFrames=new Set();for(const issue of combinedIssues)for(const f of frames)if(f>=issue.firstFrame&&f<=issue.lastFrame)issueFrames.add(f);
+  const combatIssueCount=combatIssues.length;
   return {
-    schema_version:'PREVIS_SPATIAL_V1',scope:'SAMPLED_PROXY_GEOMETRY',status:issues.length?'ISSUES_FOUND':'NO_ISSUES_OBSERVED',
+    schema_version:'PREVIS_SPATIAL_V1',scope:'SAMPLED_PROXY_GEOMETRY',status:issues.length+combatIssueCount?'ISSUES_FOUND':'NO_ISSUES_OBSERVED',
     sampling:{basis:'EXPORT_FRAME_TIMES',fps:scene.fps,frameCount,everyFrames:config.everyFrames,sampleCount:frames.length,sampleFrames:frames,sampleTimes_s:sampleTimes,first_s:sampleTimes[0],last_s:sampleTimes.at(-1),maxSamples:config.maxSamples},
     checks:{actorOverlap:true,stageBounds:bounds.basis,dynamicDoorContacts:'NOT_CHECKED',floorAndCeiling:true,explicitObstacleCollision:true,requiredFramingOnly:true,proxyOcclusion:config.checkOcclusion,verticalProjectionFallback},
+    ...(combatAudit?{combat:combatAudit}:{}),
     thresholds:{defaultActorRadius_m:.22,collisionTolerance_m:config.tolerance,cameraNear_m:config.near},
-    counts:{issueGroups:issues.length,issueObservations,samplesWithIssues,byCode,severity:{warning:issues.length}},issues,
+    counts:{issueGroups:issues.length+combatIssueCount,spatialIssueGroups:issues.length,combatIssueGroups:combatIssueCount,issueObservations:combinedIssues.reduce((n,i)=>n+i.observations,0),samplesWithIssues:issueFrames.size,byCode:combinedByCode,severity:{warning:issues.length+combatIssueCount}},issues:combinedIssues,
     limitations:[
       'Warnings use cylindrical actor proxies and static explicit AABBs, not mesh contacts, skeletal pose, limbs, pixel masks or a physics simulation.',
       'Only declared framing.requiredActors are checked for image visibility. Other actors may intentionally be cropped or off screen.',
@@ -163,4 +174,69 @@ export function auditScene(scene,options={}){
       'No issues observed is limited to these sampled proxy checks; it is not full media or semantic PASS.'
     ]
   };
+}
+
+
+function objectBox(state){
+  const points=[];for(const x of [-1,1])for(const y of [-1,1])for(const z of [-1,1])points.push(combatPointToWorld(state,[x*state.size[0]/2,y*state.size[1]/2,z*state.size[2]/2]));
+  return {min:[0,1,2].map(i=>Math.min(...points.map(p=>p[i]))),max:[0,1,2].map(i=>Math.max(...points.map(p=>p[i])))};
+}
+function boxesOverlap(a,b,tolerance){return a.min.every((v,i)=>a.max[i]>b.min[i]+tolerance&&v<b.max[i]-tolerance)}
+
+/** Attack/response remains a human review. Only declared proxy contacts and bounds
+ * are tested. No target, force, damage or camera visibility is guessed from prose. */
+export function auditCombat(scene,options={}){
+  if(!object(options))invalid(['options must be an object.']);
+  const config=validateAuditInput(scene,options),frameCount=Math.round(scene.duration*scene.fps),frames=[];
+  if(!Number.isSafeInteger(frameCount)||frameCount<1)invalid(['Combat export frame count is outside the safe integer range.']);
+  const count=Math.ceil(frameCount/config.everyFrames)+((frameCount-1)%config.everyFrames===0?0:1);
+  if(count>config.maxSamples)invalid(['Combat sample budget exceeded; choose an explicit everyFrames or maxSamples.'],'SPATIAL_SAMPLE_BUDGET_EXCEEDED');
+  for(let f=0;f<frameCount;f+=config.everyFrames)frames.push(f);if(frames.at(-1)!==frameCount-1)frames.push(frameCount-1);
+  const issues=[],groups=new Map(),planned=new Map(),bounds=stageBounds(scene);let previous=null;
+  const warn=(code,ids,frame,details)=>{
+    const shot=scene.shots.find(s=>frame/scene.fps>=s.start&&frame/scene.fps<s.end)||scene.shots.at(-1),key=JSON.stringify([code,ids,shot.id]);
+    const prior=groups.get(key);
+    if(prior&&prior._sample===frame-config.everyFrames){prior.lastFrame=frame;prior.end_s=round(frame/scene.fps);prior.observations++;prior._sample=frame;return}
+    const item={code,severity:'warning',objectIds:ids,shotId:shot.id,firstFrame:frame,lastFrame:frame,start_s:round(frame/scene.fps),end_s:round(frame/scene.fps),observations:1,evidence:details,_sample:frame};issues.push(item);groups.set(key,item);
+  };
+  for(const frame of frames){
+    const t=frame/scene.fps,combat=sampleActions(scene,t).combat,values=Object.values(combat.objects);
+    const active=combat.contacts.filter(c=>c.expected),boxes=new Map(values.map(o=>[o.id,objectBox(o)]));
+    for(const c of combat.contacts){
+      if(c.expected){const p=planned.get(c.id)??{id:c.id,actor_id:c.actor_id??null,object_id:c.object_id??null,target_id:c.target_id,observations:0,max_gap_m:0,basis:'DECLARED_PROXY_CONTACT'};p.observations++;p.max_gap_m=Math.max(p.max_gap_m,c.gap_m);planned.set(c.id,p);
+        if(c.gap_m>config.tolerance)warn('EXPECTED_CONTACT_GAP',[c.object_id??c.actor_id,c.target_id],frame,c);
+        if(!c.target_visible)warn('EXPECTED_CONTACT_TARGET_INVISIBLE',[c.target_id],frame,c);
+      }else if(c.gap_m<=config.tolerance)warn('UNPLANNED_CONTACT_OBSERVED',[c.object_id??c.actor_id,c.target_id],frame,c);
+    }
+    for(const value of values){
+      if(!value.visible)continue;const box=boxes.get(value.id);
+      if(box.min.some((v,i)=>v<bounds.min[i]-config.tolerance)||box.max.some((v,i)=>v>bounds.max[i]+config.tolerance))warn('COMBAT_OBJECT_OUTSIDE_BOUNDS',[value.id],frame,{box,bounds,kind:value.kind});
+      if(['sword','staff','projectile'].includes(value.kind)){
+        for(const obstacle of config.obstacles){
+          const before=previous?.objects[value.id],expanded={min:obstacle.min.map((v,i)=>v-(box.max[i]-box.min[i])/2),max:obstacle.max.map((v,i)=>v+(box.max[i]-box.min[i])/2)};
+          const swept=before?.visible&&rayBoxFraction(before.position,value.position,expanded)!==null;
+          if(boxesOverlap(box,obstacle,config.tolerance)||swept)warn('WEAPON_INTERSECTS_DECLARED_OBSTACLE',[value.id,obstacle.id],frame,{box,obstacle,swept:!!swept,from:before?.position??null,to:value.position});
+        }
+        for(const target of values){
+          if(!target.visible||target.id===value.id||!(target.solid===true||target.solid!==false&&['barrier','shield'].includes(target.kind)))continue;
+          const plannedContact=active.some(c=>c.object_id===value.id&&c.target_id===target.id||c.object_id===target.id&&c.target_id===value.id);
+          const before=previous?.objects[value.id],targetBox=boxes.get(target.id),expanded={min:targetBox.min.map((v,i)=>v-(box.max[i]-box.min[i])/2),max:targetBox.max.map((v,i)=>v+(box.max[i]-box.min[i])/2)};
+          const swept=before?.visible&&rayBoxFraction(before.position,value.position,expanded)!==null;
+          if(!plannedContact&&(boxesOverlap(box,targetBox,config.tolerance)||swept))warn('UNPLANNED_COMBAT_PROXY_INTERSECTION',[value.id,target.id],frame,{sourceBox:box,targetBox:boxes.get(target.id)});
+        }
+      }
+    }
+    const shot=scene.shots.find(s=>t>=s.start&&t<s.end)||scene.shots.at(-1),pose=sampleCamera(shot,t),basis=cameraBasis(pose);
+    for(const id of shot.framing?.requiredObjects??[]){const value=combat.objects[id];
+      if(!value.visible){warn('REQUIRED_COMBAT_OBJECT_NOT_VISIBLE',[id],frame,{visible:false});continue}
+      if(!basis){warn('CAMERA_DIRECTION_UNDEFINED',[],frame,pose);continue}
+      const mode=shot.framing.mode??'center',box=boxes.get(id),points=mode==='center'?[value.position]:[];
+      if(mode==='full')for(const x of [box.min[0],box.max[0]])for(const y of [box.min[1],box.max[1]])for(const z of [box.min[2],box.max[2]])points.push([x,y,z]);
+      const margin=shot.framing.margin??.02,projected=points.map(point=>project(point,pose,basis,scene.width/scene.height,config.near));
+      if(projected.some(v=>!v.inFront||v.screen.some(n=>n<margin||n>1-margin)))warn('REQUIRED_COMBAT_OBJECT_OUT_OF_FRAME',[id],frame,{camera:pose,mode,projected});
+    }
+    previous=combat;
+  }
+  for(const issue of issues)delete issue._sample;
+  return {schema_version:'PREVIS_COMBAT_AUDIT_V1',scope:'SAMPLED_PROXY',status:issues.length?'ISSUES_FOUND':'NO_ISSUES_OBSERVED',sampling:{basis:'EXPORT_FRAME_TIMES',fps:scene.fps,frameCount,everyFrames:config.everyFrames,sampleCount:frames.length,sampleFrames:frames},plannedContacts:[...planned.values()],issues,counts:{issueGroups:issues.length,plannedContactGroups:planned.size},checks:{absoluteTracks:true,uniqueOwnership:'STRUCTURAL_VALIDATION',irreversibility:'STRUCTURAL_VALIDATION',expectedContactGaps:true,weaponExplicitObstacles:true,requiredObjectsOnly:true},limitations:['Contact targets are explanatory proxies, not IK, support, forces or tactical PASS.','Collision uses transformed object AABBs and sampled/swept proxy centres, not exact mesh collision.','Only declared requiredObjects and explicit obstacles are checked; undeclared attack targets are not inferred.','Visibility/knowledge/light event records are preserved; drawing visibility comes only from the explicit object keys.','Open air uses declared world bounds and ground height, never an indoor ceiling.']};
 }

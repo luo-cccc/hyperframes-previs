@@ -1,3 +1,4 @@
+import {actorScale,sampleCombat} from './combat-data.js';
 // All coordinates are metres, Y up. Angles are radians. A hinged leaf spans
 // local X=[0,width], Y=[0,height], Z=[-thickness/2,+thickness/2] from its hinge.
 // Rotation is world Y = closedYaw + swingSign * angle (swingSign defaults to +1). New action tracks interpolate linearly;
@@ -46,6 +47,13 @@ export function validateActionData(scene){
     const label=actor.id||`actors[${index}]`;
     if(actor.yawKeys!==undefined)keys(actor.yawKeys,`${label}.yawKeys`,(key,name)=>expect(finite(key.yaw),`${name}.yaw must be finite radians.`));
     if(actor.gazeKeys!==undefined)keys(actor.gazeKeys,`${label}.gazeKeys`,(key,name)=>expect(vector(key.target),`${name}.target must be a finite world XYZ vector.`));
+    for(const field of ['handKeys','footKeys'])if(actor[field]!==undefined){
+      if(!object(actor[field]))errors.push(`${label}.${field} must be a left/right target map.`);
+      else for(const [side,track] of Object.entries(actor[field])){
+        expect(['left','right'].includes(side),`${label}.${field}: target side must be left or right.`);
+        keys(track,`${label}.${field}.${side}`,(key,name)=>expect(vector(key.position),`${name}.position must be finite world XYZ metres.`));
+      }
+    }
     if(actor.contacts!==undefined){
       if(!Array.isArray(actor.contacts))errors.push(`${label}.contacts must be an array.`);
       else{
@@ -125,11 +133,11 @@ export function doorPointToWorld(doorState,localPoint){
  */
 export function sampleActorAction(scene,actor,t,doorState=sampleDoor(scene,t)){
   actionTime(scene,t);
-  const path=samplePath(actor.path,t),scale=actor.height/1.8;
+  const path=samplePath(actor.path,t),scale=actorScale(actor);
   const yaw=actor.yawKeys?sampleLinearKeys(actor.yawKeys,t,'yaw'):(actor.yaw??path.heading);
   const gaitPhase=path.distance/1.25*Math.PI*2;
   const modelPosition=[path.position[0],path.position[1]+Math.abs(Math.sin(gaitPhase))*.018*path.walking,path.position[2]];
-  const toWorld=point=>add(modelPosition,rotateY(point.map(v=>v*scale),yaw));
+  const toWorld=point=>add(modelPosition,rotateY(point.map((v,i)=>v*scale[i]),yaw));
   const hands={};
   for(const hand of ['left','right']){
     const angle=actor.pose==='aim'?.83:.1;
@@ -139,7 +147,16 @@ export function sampleActorAction(scene,actor,t,doorState=sampleDoor(scene,t)){
     const sign=hand==='left'?-1:1;
     const local=keyHand?[sign*.39,.88,.1]:[sign*.285,1.41-.32*Math.cos(angle)-.28*Math.cos(angle+.75),-.32*Math.sin(angle)-.28*Math.sin(angle+.75)];
     const contact=(actor.contacts??[]).find(c=>c.hand===hand&&t>=c.start&&(t<c.end||t===scene.duration&&t===c.end));
-    hands[hand]={position:contact?doorPointToWorld(doorState,contact.localPoint):toWorld(local),contact:contact?structuredClone(contact):null,basis:contact?'DOOR_LOCAL_CONTACT':keyHand?'KEY_HIP_HOLD':'MANNEQUIN_REST'};
+    const target=actor.handKeys?.[hand]?sampleLinearKeys(actor.handKeys[hand],t,'position'):null;
+    hands[hand]={position:contact?doorPointToWorld(doorState,contact.localPoint):target??toWorld(local),contact:contact?structuredClone(contact):null,basis:contact?'DOOR_LOCAL_CONTACT':target?'EXPLICIT_WORLD_TARGET':keyHand?'KEY_HIP_HOLD':'MANNEQUIN_REST'};
+  }
+  const feet={};
+  for(const side of ['left','right']){
+    const sign=side==='left'?-1:1,swing=Math.sin(gaitPhase)*sign,hip=swing*.39*path.walking,knee=Math.max(0,-swing)*.48*path.walking;
+    const y=-.39*Math.cos(knee)+.065*Math.sin(knee),z=-.39*Math.sin(knee)-.065*Math.cos(knee);
+    const local=[sign*.105,.87+(-.37+y)*Math.cos(hip)-z*Math.sin(hip),(-.37+y)*Math.sin(hip)+z*Math.cos(hip)];
+    const target=actor.footKeys?.[side]?sampleLinearKeys(actor.footKeys[side],t,'position'):null;
+    feet[side]={position:target??toWorld(local),contact:null,basis:target?'EXPLICIT_WORLD_TARGET':'MANNEQUIN_GAIT'};
   }
   const target=actor.gazeKeys?sampleLinearKeys(actor.gazeKeys,t,'target'):null;
   let headYaw=0,headPitch=0;
@@ -150,9 +167,11 @@ export function sampleActorAction(scene,actor,t,doorState=sampleDoor(scene,t)){
   let prop=null;
   if(actor.prop?.type==='key')prop={...structuredClone(actor.prop),position:add(hands[actor.prop.hand].position,rotateY(actor.prop.offset??[0,-.075,0],yaw))};
   else if(actor.prop?.type==='block-rifle')prop={...structuredClone(actor.prop),position:toWorld([.06,1.08,-.42])};
-  return {...path,modelPosition,yaw,gaitPhase,gaze:{target,headYaw,headPitch},hands,prop};
+  return {...path,modelPosition,yaw,gaitPhase,gaze:{target,headYaw,headPitch},hands,feet,prop};
 }
 export function sampleActions(scene,t){
   actionTime(scene,t);const door=sampleDoor(scene,t);
-  return {time:t,door,actors:Object.fromEntries(scene.actors.map(actor=>[actor.id,sampleActorAction(scene,actor,t,door)]))};
+  const actors=Object.fromEntries(scene.actors.map(actor=>[actor.id,sampleActorAction(scene,actor,t,door)]));
+  const combat=sampleCombat(scene,t,actors);
+  return {time:t,door,actors:combat.actors,combat};
 }

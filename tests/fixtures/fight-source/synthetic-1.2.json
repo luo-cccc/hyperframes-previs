@@ -1,0 +1,481 @@
+{
+  "schema_version": "1.2",
+  "title": "SYNTHETIC 原创接收契约夹具",
+  "duration_sec": 8,
+  "aspect_ratio": "16:9",
+  "style": "SYNTHETIC 几何占位",
+  "assumptions": [
+    "SYNTHETIC 仅作结构回归；高度 UNKNOWN，代理尺寸由下游明确。"
+  ],
+  "constraints": [
+    "SYNTHETIC 不代表真实剧情或媒体验收。"
+  ],
+  "design": {
+    "goals": [
+      "青衣者守住石阶。",
+      "灰翼者带走铜环。"
+    ],
+    "rules": [
+      "铜环只有一枚，接触后保留同一身份。"
+    ],
+    "turns": [
+      "灰翼者看到遮挡后改换线路。"
+    ],
+    "outcome": "双方停在石阶两侧。",
+    "viewing_tasks": [
+      "让观众看清铜环的位置。"
+    ]
+  },
+  "assets": [
+    {
+      "id": "sy_actor_a",
+      "kind": "character",
+      "name": "青衣者",
+      "anchors": [
+        "青色外袍"
+      ],
+      "states": [
+        "右袖破损"
+      ],
+      "image_prompt": "SYNTHETIC 青色几何人形。"
+    },
+    {
+      "id": "sy_actor_b",
+      "kind": "creature",
+      "name": "灰翼者",
+      "anchors": [
+        "两片灰翼"
+      ],
+      "states": [
+        "左翼收起"
+      ],
+      "image_prompt": "SYNTHETIC 灰色双翼代理。"
+    },
+    {
+      "id": "sy_actor_c",
+      "kind": "manifestation",
+      "name": "方形法相",
+      "anchors": [
+        "空心方框"
+      ],
+      "states": [],
+      "image_prompt": "SYNTHETIC 空心方框代理。"
+    },
+    {
+      "id": "sy_scene",
+      "kind": "scene",
+      "name": "石阶",
+      "anchors": [
+        "两级石阶"
+      ],
+      "states": [
+        "石面湿痕"
+      ],
+      "image_prompt": "SYNTHETIC 两级石阶。"
+    },
+    {
+      "id": "sy_prop",
+      "kind": "prop",
+      "name": "铜环",
+      "anchors": [
+        "只有一枚圆环"
+      ],
+      "states": [
+        "落在石面"
+      ],
+      "image_prompt": "SYNTHETIC 单一铜环。"
+    },
+    {
+      "id": "sy_unused",
+      "kind": "prop",
+      "name": "未来木箱",
+      "anchors": [
+        "方形木箱"
+      ],
+      "states": [],
+      "image_prompt": "SYNTHETIC 无关后段木箱。"
+    }
+  ],
+  "scene": {
+    "asset_id": "sy_scene",
+    "geography": "石阶向北，统一零点是下层石面；SYNTHETIC 本地坐标待实施。",
+    "attrition": [
+      {
+        "id": "sy_mark",
+        "mark": "石面湿痕",
+        "from_beat": "sy_breath",
+        "consequence": "下一次落脚避开湿处。"
+      }
+    ]
+  },
+  "beats": [
+    {
+      "id": "sy_breath",
+      "start": 0,
+      "end": 2,
+      "actors": [
+        "sy_actor_a",
+        "sy_actor_b"
+      ],
+      "action": "两人停步看清湿痕。",
+      "response": "灰翼者收拢翅尖。",
+      "result": "铜环保持在青衣者掌中。",
+      "requires": [],
+      "marks": [
+        "breath"
+      ]
+    },
+    {
+      "id": "sy_cross",
+      "start": 2,
+      "end": 6,
+      "actors": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c"
+      ],
+      "action": "青衣者把铜环送向石面，灰翼者改变接近线路。",
+      "response": "方形法相沿铜环旁边移开。",
+      "result": "两人分立，铜环落在石面。",
+      "requires": [
+        "sy_breath"
+      ],
+      "marks": [
+        "pivotal",
+        "adaptation"
+      ]
+    },
+    {
+      "id": "sy_future",
+      "start": 6,
+      "end": 8,
+      "actors": [
+        "sy_actor_a"
+      ],
+      "action": "青衣者转头看向木箱。",
+      "response": "灰翼者保持原位。",
+      "result": "双方不再移动。",
+      "requires": []
+    }
+  ],
+  "shots": [
+    {
+      "id": "sy_shot_a",
+      "start": 0,
+      "end": 2,
+      "beat_ids": [
+        "sy_breath"
+      ],
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_scene",
+        "sy_prop"
+      ],
+      "opening_state": "铜环在掌中，双方停在下阶。",
+      "camera": "平视观察石阶。",
+      "effects": "方框保持可辨轮廓。",
+      "sound": "只有脚步与衣料声。",
+      "end_state": "铜环在掌中，灰翼收拢。",
+      "execution": {
+        "opening_state": "掌中有环，双方站定。",
+        "end_state": "掌中有环，翅尖收拢。",
+        "camera": "固定机位看清持环手。",
+        "effects": "方框不遮挡铜环。",
+        "sound": "衣料声。",
+        "light": "冷色环境光",
+        "cues": [
+          {
+            "start": 0,
+            "end": 2,
+            "text": "双方停步，保持持物。"
+          }
+        ]
+      },
+      "light": "冷色环境光",
+      "risk": "low"
+    },
+    {
+      "id": "sy_shot_b",
+      "start": 2,
+      "end": 4,
+      "beat_ids": [
+        "sy_cross"
+      ],
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_scene",
+        "sy_prop"
+      ],
+      "opening_state": "铜环在掌中，灰翼收拢。",
+      "camera": "平视观察石阶。",
+      "effects": "方框保持可辨轮廓。",
+      "sound": "只有脚步与衣料声。",
+      "end_state": "铜环正在下降，法相侧移。",
+      "execution": {
+        "opening_state": "掌中有环，翅尖收拢。",
+        "end_state": "铜环下降，方框侧移。",
+        "camera": "固定机位看清持环手。",
+        "effects": "方框不遮挡铜环。",
+        "sound": "衣料声。",
+        "light": "铜色环面反光",
+        "cues": [
+          {
+            "start": 2,
+            "end": 4,
+            "text": "铜环从掌中下降，其他动作从已有相位继续。"
+          }
+        ]
+      },
+      "light": "铜色环面反光",
+      "risk": "low"
+    },
+    {
+      "id": "sy_shot_c",
+      "start": 4,
+      "end": 6,
+      "beat_ids": [
+        "sy_cross"
+      ],
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_scene",
+        "sy_prop"
+      ],
+      "opening_state": "铜环正在下降，法相侧移。",
+      "camera": "平视观察石阶。",
+      "effects": "方框保持可辨轮廓。",
+      "sound": "只有脚步与衣料声。",
+      "end_state": "铜环落石，双方分立。",
+      "execution": {
+        "opening_state": "铜环下降，方框侧移。",
+        "end_state": "铜环已落地，两人分开。",
+        "camera": "固定机位看清持环手。",
+        "effects": "方框不遮挡铜环。",
+        "sound": "衣料声。",
+        "light": "铜色环面反光",
+        "cues": [
+          {
+            "start": 4,
+            "end": 6,
+            "text": "保持下降相位直至铜环落石。"
+          }
+        ]
+      },
+      "light": "铜色环面反光",
+      "risk": "low"
+    },
+    {
+      "id": "sy_shot_d",
+      "start": 6,
+      "end": 8,
+      "beat_ids": [
+        "sy_future"
+      ],
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_scene",
+        "sy_prop",
+        "sy_unused"
+      ],
+      "opening_state": "铜环落石，双方分立。",
+      "camera": "平视观察石阶。",
+      "effects": "方框保持可辨轮廓。",
+      "sound": "只有脚步与衣料声。",
+      "end_state": "双方望向木箱。",
+      "execution": {
+        "opening_state": "铜环已落地，两人分开。",
+        "end_state": "双方望向远处。",
+        "camera": "固定机位看清持环手。",
+        "effects": "方框不遮挡铜环。",
+        "sound": "衣料声。",
+        "light": "中性天空光",
+        "cues": [
+          {
+            "start": 6,
+            "end": 8,
+            "text": "两人看向远处，不重放放环动作。"
+          }
+        ]
+      },
+      "light": "中性天空光",
+      "risk": "low"
+    }
+  ],
+  "segments": [
+    {
+      "id": "sy_unit_a",
+      "shot_ids": [
+        "sy_shot_a"
+      ],
+      "opening_state": "铜环在掌中，双方停在下阶。",
+      "closing_state": "铜环在掌中，灰翼收拢。",
+      "prompt_context": "SYNTHETIC 保持原状态，只有本镜当前窗口。"
+    },
+    {
+      "id": "sy_unit_b",
+      "shot_ids": [
+        "sy_shot_b",
+        "sy_shot_c"
+      ],
+      "opening_state": "铜环在掌中，灰翼收拢。",
+      "closing_state": "铜环落石，双方分立。",
+      "prompt_context": "SYNTHETIC 连续放环，不重放起手。"
+    },
+    {
+      "id": "sy_unit_c",
+      "shot_ids": [
+        "sy_shot_d"
+      ],
+      "opening_state": "铜环落石，双方分立。",
+      "closing_state": "双方望向木箱。",
+      "prompt_context": "SYNTHETIC 铜环已经落地。"
+    }
+  ],
+  "keyframes": [
+    {
+      "id": "sy_frame_a",
+      "shot_id": "sy_shot_a",
+      "time_sec": 1,
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_prop"
+      ],
+      "state": "SYNTHETIC 保留该时刻铜环与手的位置。",
+      "prompt": "SYNTHETIC 单帧几何构图，不代表实际图片已生成。",
+      "role": "single"
+    },
+    {
+      "id": "sy_handoff_a",
+      "shot_id": "sy_shot_a",
+      "time_sec": 2,
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_prop"
+      ],
+      "state": "SYNTHETIC 保留该时刻铜环与手的位置。",
+      "prompt": "SYNTHETIC 单帧几何构图，不代表实际图片已生成。",
+      "role": "handoff"
+    },
+    {
+      "id": "sy_prep",
+      "shot_id": "sy_shot_b",
+      "time_sec": 2.5,
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_prop"
+      ],
+      "state": "SYNTHETIC 保留该时刻铜环与手的位置。",
+      "prompt": "SYNTHETIC 单帧几何构图，不代表实际图片已生成。",
+      "role": "prep"
+    },
+    {
+      "id": "sy_contact",
+      "shot_id": "sy_shot_b",
+      "time_sec": 3.5,
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_prop"
+      ],
+      "state": "SYNTHETIC 保留该时刻铜环与手的位置。",
+      "prompt": "SYNTHETIC 单帧几何构图，不代表实际图片已生成。",
+      "role": "contact"
+    },
+    {
+      "id": "sy_result",
+      "shot_id": "sy_shot_c",
+      "time_sec": 5.5,
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_prop"
+      ],
+      "state": "SYNTHETIC 保留该时刻铜环与手的位置。",
+      "prompt": "SYNTHETIC 单帧几何构图，不代表实际图片已生成。",
+      "role": "result"
+    },
+    {
+      "id": "sy_handoff_b",
+      "shot_id": "sy_shot_c",
+      "time_sec": 6,
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_prop"
+      ],
+      "state": "SYNTHETIC 保留该时刻铜环与手的位置。",
+      "prompt": "SYNTHETIC 单帧几何构图，不代表实际图片已生成。",
+      "role": "handoff"
+    },
+    {
+      "id": "sy_frame_d",
+      "shot_id": "sy_shot_d",
+      "time_sec": 7,
+      "asset_ids": [
+        "sy_actor_a",
+        "sy_actor_b",
+        "sy_actor_c",
+        "sy_prop"
+      ],
+      "state": "SYNTHETIC 保留该时刻铜环与手的位置。",
+      "prompt": "SYNTHETIC 单帧几何构图，不代表实际图片已生成。",
+      "role": "single"
+    }
+  ],
+  "cost": [
+    {
+      "id": "sy_cost_a",
+      "owner": "sy_actor_a",
+      "item": "右袖布边",
+      "from_beat": "sy_breath",
+      "irreversible": true,
+      "consequence": "布边不能恢复。"
+    },
+    {
+      "id": "sy_cost_b",
+      "owner": "sy_actor_b",
+      "item": "左翼支撑机会",
+      "from_beat": "sy_breath",
+      "irreversible": false,
+      "consequence": "本窗口左翼保持收拢。"
+    }
+  ],
+  "knowledge": [
+    {
+      "id": "sy_knowledge",
+      "holder": "sy_actor_b",
+      "belief": "铜环仍在掌心。",
+      "truth": "铜环将被放到石面。",
+      "from_beat": "sy_breath",
+      "cue": "观众看见青衣者松开手指。",
+      "resolved_by": "sy_cross"
+    }
+  ],
+  "review": {
+    "scope": "SYNTHETIC 原创结构夹具。",
+    "fixed": [],
+    "pending": [
+      "不代表动作或媒体检查。"
+    ],
+    "invalidated": [],
+    "verification": "SYNTHETIC 仅登记来源。",
+    "media_observations": []
+  }
+}

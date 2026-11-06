@@ -2,6 +2,7 @@ import {readFile,readdir,lstat,mkdir,copyFile,writeFile} from 'node:fs/promises'
 import {createHash} from 'node:crypto';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import path from 'node:path';
+import {isFightPacket,sourceLineage} from './source-lineage.mjs';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const forward=value=>value.replaceAll(path.sep,'/');
@@ -22,14 +23,15 @@ export async function bundleProject({project,out}){
   project=path.resolve(project);out=path.resolve(out);
   expect(!await exists(out),`output already exists: ${out}`);
   expect(!inside(project,out),'output must be outside the source project.');
-  for(const lock of ['.previs-save.lock','.previs-render.lock','.previs-handoff.lock','.previs-boundary.lock'])expect(!await exists(path.join(project,lock)),`project is locked (${lock}); wait for the operation to finish before bundling.`);
+  for(const lock of ['.previs-save.lock','.previs-render.lock','.previs-handoff.lock','.previs-boundary.lock','.previs-state-capture.lock'])expect(!await exists(path.join(project,lock)),`project is locked (${lock}); wait for the operation to finish before bundling.`);
   const sceneFile=path.join(project,'scene.json'),sceneBytes=await readFile(sceneFile),scene=JSON.parse(sceneBytes.toString('utf8'));
   expect(scene.upstream,'this helper requires a bound upstream-adapter project.');
   const intakeReference=relativeReference(scene.upstream.intake,'scene.upstream.intake');
   const intakeFile=path.resolve(project,intakeReference),intakeBytes=await readFile(intakeFile),packet=JSON.parse(intakeBytes.toString('utf8'));
   expect(hash(intakeBytes)===scene.upstream.intake_sha256,'intake hash mismatch; review and bind current input before bundling.');
-  expect(packet.schema_version==='STORYBOARD_PREVIS_ADAPTER_V1'&&packet.upstream_writes===false,'unsupported intake contract or missing read-only boundary.');
-  for(const field of ['project_id','formal_id','prompt_version','budget_version'])expect(scene.upstream[field]===packet[field],`${field} differs from intake.`);
+  expect(['STORYBOARD_PREVIS_ADAPTER_V1','PREVIS_FIGHT_ADAPTER_V1'].includes(packet.schema_version)&&packet.upstream_writes===false,'unsupported intake contract or missing read-only boundary.');
+  if(isFightPacket(packet))expect(scene.upstream.provider==='xianxia-fight-director'&&JSON.stringify(scene.upstream.lineage)===JSON.stringify(packet.lineage),'fight source lineage differs from intake.');
+  else for(const field of ['project_id','formal_id','prompt_version','budget_version'])expect(scene.upstream[field]===packet[field],`${field} differs from intake.`);
   expect(Array.isArray(packet.sources)&&packet.sources.length>0,'explicit source evidence is required.');
   const explicit=[{role:'intake',reference:intakeReference,file:intakeFile,sha256:hash(intakeBytes)}];
   for(const source of packet.sources){
@@ -93,7 +95,7 @@ export async function bundleProject({project,out}){
   expect((await sourceFingerprint(copiedProject)).sha256===fingerprint.sha256,'tracked renderer inputs are missing or changed in the bundle.');
   expect(await checkUpstream(project,scene),'source adapter became invalid during bundling.');
   expect(await checkUpstream(copiedProject,scene),'copied evidence does not satisfy the canonical source scope.');
-  const manifest={bundle_contract:'PREVIS_PORTABLE_EVIDENCE_V1',created_at:new Date().toISOString(),snapshot_role:'READ_ONLY_EVIDENCE_SNAPSHOT',upstream_authority:false,authority_notice:'Copied source evidence is a frozen, read-only snapshot. It must not replace or be committed as the upstream authoritative project state.',original_project_root:project,original_common_root:common,project_root:projectRelative,entry_html:projectRelative+'/studio.html',start_command:'node scripts/serve.mjs',start_command_cwd:projectRelative,project_id:packet.project_id,formal_id:packet.formal_id,prompt_version:packet.prompt_version,budget_version:packet.budget_version,rewritten_project_files:[],source_snapshots:explicit.map(source=>({role:source.role,actor_id:source.actor_id,original_reference:source.reference,original_path:source.file,bundle_path:'tree/'+forward(path.relative(common,source.file)),first_snapshot_sha256:source.first_snapshot_sha256,copied_sha256:source.sha256,sha256:source.sha256})),renderer_inputs_sha256:fingerprint.sha256,renderer_inputs:fingerprint.files,files,validation_status:'CANONICAL_SCOPE_AND_COPY_INTEGRITY_CHECKED',render_claim:'Existing rendered bytes and receipts are copied unchanged. Bundling does not perform or claim a new render.'};
+  const manifest={bundle_contract:'PREVIS_PORTABLE_EVIDENCE_V1',created_at:new Date().toISOString(),snapshot_role:'READ_ONLY_EVIDENCE_SNAPSHOT',upstream_authority:false,authority_notice:'Copied source evidence is a frozen, read-only snapshot. It must not replace or be committed as the upstream authoritative project state.',original_project_root:project,original_common_root:common,project_root:projectRelative,entry_html:projectRelative+'/studio.html',start_command:'node scripts/serve.mjs',start_command_cwd:projectRelative,source_lineage:sourceLineage(packet,scene),project_id:packet.project_id,formal_id:packet.formal_id,prompt_version:packet.prompt_version,budget_version:packet.budget_version,rewritten_project_files:[],source_snapshots:explicit.map(source=>({role:source.role,actor_id:source.actor_id,original_reference:source.reference,original_path:source.file,bundle_path:'tree/'+forward(path.relative(common,source.file)),first_snapshot_sha256:source.first_snapshot_sha256,copied_sha256:source.sha256,sha256:source.sha256})),renderer_inputs_sha256:fingerprint.sha256,renderer_inputs:fingerprint.files,files,validation_status:'CANONICAL_SCOPE_AND_COPY_INTEGRITY_CHECKED',render_claim:'Existing rendered bytes and receipts are copied unchanged. Bundling does not perform or claim a new render.'};
   await writeFile(path.join(out,'bundle-manifest.json'),JSON.stringify(manifest,null,2)+'\n','utf8');
   return {output:out,project:path.join(out,projectRelative),entry:manifest.entry_html,files:files.length,upstream_authority:false,rewritten_project_files:[]};
 }

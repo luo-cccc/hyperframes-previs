@@ -19,7 +19,10 @@ export function validateTimeMapping(scene){
   mapping.segments.forEach((segment,index)=>{
     const label=`timeMapping.segments[${index}]`;
     if(!object(segment)){errors.push(`${label} must be an object.`);return}
-    for(const name of ['input_id','formal_id','source_version'])expect(text(segment[name]),`${label}.${name} must be a nonempty string.`);
+    for(const name of ['input_id','source_version'])expect(text(segment[name]),`${label}.${name} must be a nonempty string.`);
+    expect(text(segment.formal_id)||text(segment.unit_id),`${label}: formal_id or source unit_id must be a nonempty string.`);
+    for(const name of ['formal_id','unit_id'])if(segment[name]!==undefined)expect(text(segment[name]),`${label}.${name} must be a nonempty string when provided.`);
+    if(segment.formal_id!==undefined&&segment.unit_id!==undefined)expect(segment.formal_id===segment.unit_id,`${label}: formal_id and unit_id aliases must agree when both are provided.`);
     for(const name of ['source_duration_s','source_start_s','source_end_s','segment_start_s','segment_end_s','edit_start_s','edit_end_s','playback_rate'])expect(finite(segment[name]),`${label}.${name} must be a finite number.`);
     expect(finite(segment.source_duration_s)&&segment.source_duration_s>0,`${label}.source_duration_s must be positive.`);
     expect(segment.source_start_s>=0&&segment.source_end_s>segment.source_start_s&&segment.source_end_s<=segment.source_duration_s,`${label}: source range must be positive and inside source_duration_s.`);
@@ -34,7 +37,7 @@ export function validateTimeMapping(scene){
     expect(close(segment.edit_end_s-segment.edit_start_s,duration),`${label}: edit and segment spans must agree at playback_rate 1.`);
     if(finite(segment.segment_end_s))end=segment.segment_end_s;
     if(text(segment.input_id)){
-      const identity=JSON.stringify([segment.formal_id,segment.source_version,segment.source_duration_s]);
+      const identity=JSON.stringify([segment.unit_id??segment.formal_id,segment.source_version,segment.source_duration_s]);
       expect(!inputs.has(segment.input_id)||inputs.get(segment.input_id)===identity,`${label}: one input_id cannot identify conflicting source versions or durations.`);
       inputs.set(segment.input_id,identity);
     }
@@ -57,5 +60,5 @@ export function mapSegmentTime(scene,t){
   const segments=scene.timeMapping.segments;
   const index=segments.findIndex((segment,i)=>t>=segment.segment_start_s&&(t<segment.segment_end_s||i===segments.length-1&&t===segment.segment_end_s));
   const segment=segments[index],offset=t-segment.segment_start_s;
-  return {segment_time_s:t,source_time_s:segment.source_start_s+offset,edit_time_s:segment.edit_start_s+offset,input_id:segment.input_id,formal_id:segment.formal_id,source_version:segment.source_version,mapping_index:index,playback_rate:1,basis:'PREVIS_TIME_MAPPING_V1'};
+  return {segment_time_s:t,source_time_s:segment.source_start_s+offset,edit_time_s:segment.edit_start_s+offset,input_id:segment.input_id,formal_id:segment.formal_id??null,...(segment.unit_id!==undefined?{unit_id:segment.unit_id}:{}),source_version:segment.source_version,mapping_index:index,playback_rate:1,basis:'PREVIS_TIME_MAPPING_V1'};
 }

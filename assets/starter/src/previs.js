@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { validateScene, sampleCamera, clamp, stageBounds } from './scene-data.js';
 import {sampleActions} from './action-data.js';
+import {actorScale} from './combat-data.js';
 import {mapSegmentTime} from './time-mapping.js';
 import {planCameraRig} from './camera-rigs.js';
 
@@ -27,9 +28,10 @@ const mats={floor:mat('#344351'),wall:mat('#475360'),trim:mat('#20303e'),door:ma
 function box(w,h,d,x,y,z,material,parent=scene){const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);mesh.position.set(x,y,z);parent.add(mesh);return mesh}
 function ball(radius,x,y,z,material,parent){const mesh=new THREE.Mesh(new THREE.SphereGeometry(radius,16,12),material);mesh.position.set(x,y,z);parent.add(mesh);return mesh}
 
-const env=data.environment,half=env.width/2,bounds=stageBounds(data);
-const floorCenter=bounds.min.map((v,i)=>i===1?v:(v+bounds.max[i])/2);
-box(env.width,.15,env.length,floorCenter[0],floorCenter[1]-.09,floorCenter[2],mats.floor);
+const env=data.environment,bounds=stageBounds(data),stageWidth=bounds.max[0]-bounds.min[0],stageLength=bounds.max[2]-bounds.min[2],half=stageWidth/2;
+const floorCenter=bounds.min.map((v,i)=>i===1?(bounds.groundY??v):(v+bounds.max[i])/2);
+if(env.type==='battlefield'){scene.fog=null;camera.far=observer.far=Math.max(120,Math.hypot(...bounds.max.map((v,i)=>v-bounds.min[i]))*4);camera.updateProjectionMatrix();observer.updateProjectionMatrix()}
+box(stageWidth,.15,stageLength,floorCenter[0],floorCenter[1]-.09,floorCenter[2],mats.floor);
 const walls=new THREE.Group();scene.add(walls);
 const doors=[];let hingedDoor=null;
 if(env.type==='corridor'){
@@ -59,7 +61,7 @@ if(env.type==='corridor'){
       box(.035,.48,.05,-sign*.65,1.5,.12,mats.light,g);return g;
     }));
   }
-}else{
+}else if(env.type==='dutyroom'){
   for(const x of [bounds.min[0],bounds.max[0]])box(.18,env.height,env.length,x,floorCenter[1]+env.height/2,floorCenter[2],mats.wall,walls);
   box(env.width,env.height,.18,floorCenter[0],floorCenter[1]+env.height/2,bounds.max[2],mats.wall,walls);
   box(env.width,.15,env.length,floorCenter[0],bounds.max[1]+.05,floorCenter[2],mats.trim,walls);
@@ -90,25 +92,38 @@ if(data.door?.type==='hinged-door'){
   box(width*.8,.035,depth+.012,width/2,height*.28,0,mats.trim,hingedDoor);
   box(.035,.22,.05,width*.85,height*.5,depth/2+.025,mats.light,hingedDoor);
 }
-const gridSize=Math.max(env.width,env.length),grid=new THREE.GridHelper(gridSize,Math.ceil(gridSize),0x7fbbc5,0x7fbbc5);grid.position.set(floorCenter[0],floorCenter[1]+.005,floorCenter[2]);grid.material.transparent=true;grid.material.opacity=.13;scene.add(grid);
+const gridSize=Math.max(stageWidth,stageLength),grid=new THREE.GridHelper(gridSize,Math.ceil(gridSize),0x7fbbc5,0x7fbbc5);grid.position.set(floorCenter[0],floorCenter[1]+.005,floorCenter[2]);grid.material.transparent=true;grid.material.opacity=.13;scene.add(grid);
 scene.add(new THREE.HemisphereLight('#cce5ef','#526274',2.1));
+if(env.type==='battlefield'){
+  const axes=new THREE.AxesHelper(Math.min(3,stageWidth/10));axes.position.fromArray(env.worldZero);scene.add(axes);
+  for(const obstacle of data.spatial?.obstacles??[]){const size=obstacle.max.map((v,i)=>v-obstacle.min[i]),center=obstacle.max.map((v,i)=>(v+obstacle.min[i])/2);const block=box(...size,...center,mat('#586675'));block.userData.previsObstacleId=obstacle.id}
+}
 const key=new THREE.DirectionalLight('#e4f3ff',2.5);key.position.set(-2,7,4);scene.add(key);
 const fill=new THREE.PointLight('#83ece3',36,19,2);fill.position.set(floorCenter[0],floorCenter[1]+2.9,env.type==='corridor'?-8.1:floorCenter[2]-1.5);scene.add(fill);
 const rear=new THREE.PointLight('#e7d0a7',25,12,2);rear.position.set(floorCenter[0]+(env.type==='corridor'?0:1.5),floorCenter[1]+2.9,env.type==='corridor'?-12:floorCenter[2]-3.2);scene.add(rear);
 
 function mannequin(actor){
-  const g=new THREE.Group();g.userData.previsActorId=actor.id;scene.add(g);g.scale.setScalar(actor.height/1.8);
-  const colored=mat(actor.color),joint=mat('#293745'),visor=mat('#101c26',{roughness:.4});
-  box(.4,.5,.25,0,1.22,0,colored,g);box(.35,.18,.23,0,.89,0,joint,g);
+  const g=new THREE.Group();g.userData.previsActorId=actor.id;scene.add(g);g.scale.fromArray(actorScale(actor));
+  const colored=mat(actor.color,actor.geometry==='manifestation'?{transparent:true,opacity:.45,wireframe:true,emissive:actor.color,emissiveIntensity:.15}:{}),joint=mat('#293745'),visor=mat('#101c26',{roughness:.4});
+  if(actor.geometry==='creature'){
+    box(.7,.48,1.2,0,1.08,.18,colored,g);
+    box(.18,.15,.85,0,.98,1.1,colored,g);
+    for(const x of [-.3,.3]){box(.12,.8,.15,x,.5,.55,colored,g);box(.2,.1,.3,x,.08,.48,joint,g)}
+  }else{box(.4,.5,.25,0,1.22,0,colored,g);box(.35,.18,.23,0,.89,0,joint,g)}
+
   const head=new THREE.Group();head.position.set(0,1.64,0);g.add(head);
   ball(.16,0,0,0,colored,head);box(.25,.08,.06,0,.02,-.14,visor,head);ball(.07,0,1.48,0,joint,g);
-  const legs=[],arms={},hands={};
+  const legs=[],arms={},hands={},feet={};
   for(const sign of [-1,1]){
     const hip=new THREE.Group();hip.position.set(sign*.105,.87,0);g.add(hip);
     box(.14,.34,.15,0,-.18,0,colored,hip);
     const knee=new THREE.Group();knee.position.y=-.37;hip.add(knee);ball(.075,0,0,0,joint,knee);
     box(.125,.34,.13,0,-.18,0,colored,knee);box(.16,.1,.29,0,-.39,-.065,joint,knee);
-    legs.push({hip,knee,sign});
+    const foot=sign<0?'left':'right',footMarker=ball(.075,0,0,0,colored,g),targetLeg=new THREE.Group();g.add(targetLeg);targetLeg.visible=false;
+    const upperLeg=box(.13,1,.13,0,0,0,colored,targetLeg),lowerLeg=box(.12,1,.12,0,0,0,colored,targetLeg);
+    feet[foot]={marker:footMarker,targetLeg,upper:upperLeg,lower:lowerLeg,hipPoint:new THREE.Vector3(sign*.105,.87,0)};
+    footMarker.visible=Boolean(data.combat||actor.footKeys);
+    legs.push({hip,knee,sign,foot});
     const arm=new THREE.Group();arm.position.set(sign*.285,1.41,0);g.add(arm);
     ball(.085,0,0,0,joint,arm);box(.12,.29,.12,0,-.16,0,colored,arm);
     const elbow=new THREE.Group();elbow.position.set(0,-.32,0);arm.add(elbow);elbow.rotation.x=.75;
@@ -117,7 +132,7 @@ function mannequin(actor){
     const upper=box(.1,1,.1,0,0,0,colored,contactArm),lower=box(.09,1,.09,0,0,0,colored,contactArm);
     const elbowMarker=ball(.065,0,0,0,joint,contactArm);
     arms[hand]={legacy:arm,contactArm,upper,lower,elbowMarker,shoulder:new THREE.Vector3(sign*.285,1.41,0),sign};
-    if(actor.contacts!==undefined||actor.prop?.type==='key')hands[hand]=ball(.065,0,0,0,colored,g);
+    if(actor.contacts!==undefined||actor.prop?.type==='key'||actor.handKeys||data.combat)hands[hand]=ball(.065,0,0,0,colored,g);
   }
   if(actor.prop?.type==='block-rifle'){
     box(.18,.13,.6,.06,1.08,-.42,joint,g);box(.05,.05,.38,.06,1.1,-.84,joint,g);
@@ -129,9 +144,37 @@ function mannequin(actor){
     box(.015,.11,.015,0,-.09,0,brass,keyProp);box(.04,.018,.015,.014,-.14,0,brass,keyProp);
   }
   const shadow=new THREE.Mesh(new THREE.CircleGeometry(.36,24),new THREE.MeshBasicMaterial({color:'#0b151e',transparent:true,opacity:.35}));shadow.rotation.x=-Math.PI/2;shadow.position.y=.012;scene.add(shadow);
-  return {g,legs,shadow,head,arms,hands,keyProp};
+  return {g,legs,shadow,head,arms,hands,feet,keyProp};
 }
 const models=new Map(data.actors.map(a=>[a.id,mannequin(a)]));
+function combatProxy(item){
+  const g=new THREE.Group();g.userData.previsCombatId=item.id;scene.add(g);
+  if(item.light){const source=new THREE.PointLight(item.light.color??item.color,item.light.intensity,item.light.range,2);source.userData.previsCombatLight=item.id;g.add(source);g.userData.lightSource=source;}
+  const ghost=['illusion','manifestation','barrier','shield'].includes(item.kind);
+  const material=mat(item.color,{transparent:ghost||item.opacity!==undefined,opacity:item.opacity??(item.kind==='illusion'?.3:item.kind==='manifestation'?.42:ghost?.32:1),wireframe:item.kind==='illusion',depthWrite:!ghost,emissive:item.color,emissiveIntensity:['node','projectile','manifestation'].includes(item.kind)?.23:.03});
+  const [w,h,d]=item.size;
+  if(['node','projectile'].includes(item.kind)){
+    const mesh=new THREE.Mesh(new THREE.OctahedronGeometry(.5),material);mesh.scale.fromArray(item.size);g.add(mesh);
+  }else if(['barrier','shield','illusion'].includes(item.kind)){
+    const mesh=box(w,h,d,0,0,0,material,g);
+    const edge=new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry),new THREE.LineBasicMaterial({color:item.color,transparent:true,opacity:.7}));g.add(edge);
+  }else if(item.kind==='manifestation'){
+    box(w*.52,h*.48,d*.42,0,0,0,material,g);
+    const head=ball(.5,0,h*.37,0,material,g);head.scale.set(w*.4,h*.26,d*.5);
+    for(const side of [-1,1]){box(w*.15,h*.5,d*.24,side*w*.36,-h*.02,0,material,g);box(w*.2,h*.25,d*.28,side*w*.16,-h*.37,0,material,g)}
+  }else if(item.kind==='mark'){
+    box(w,h,d,0,0,0,material,g);
+    const slash=box(w*.85,h*1.04,d*.18,0,0,0,mat('#1b2330'),g);slash.rotation.y=.25;
+  }else{
+    const dims=[w,h,d],long=dims.indexOf(Math.max(...dims));
+    const shaft=dims.map((v,i)=>i===long?v:v*.58);box(...shaft,0,0,0,material,g);
+    const gripPosition=[0,0,0];gripPosition[long]=-dims[long]*.38;const gripSize=dims.map((v,i)=>i===long?v*.2:v*.92);
+    box(...gripSize,...gripPosition,mat('#d9b66b'),g);
+  }
+  g.userData.localGeometrySize=new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).toArray();
+  return g;
+}
+const combatModels=new Map((data.combat?.objects??[]).map(item=>[item.id,combatProxy(item)]));
 const selectionBox=new THREE.BoxHelper(undefined,0x71e4d7);selectionBox.visible=false;scene.add(selectionBox);
 function notifySelection(){window.dispatchEvent(new CustomEvent('previs-select',{detail:{objectId:selectedObject,point:selectionPoint,time,shotId:activeShot.id,view}}))}
 function selectActor(id,point=selectionPoint){
@@ -161,9 +204,9 @@ function updatePathHelpers(){for(const actor of data.actors)pathLines.get(actor.
 function draw(){if(selectedObject)selectionBox.setFromObject(models.get(selectedObject).g);renderer.render(scene,view==='camera'?camera:observer)}
 const limbUp=new THREE.Vector3(0,1,0);
 function setLimb(mesh,a,b){const delta=b.clone().sub(a),length=delta.length();mesh.visible=length>1e-9;if(!mesh.visible)return;mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.scale.y=length;mesh.quaternion.setFromUnitVectors(limbUp,delta.divideScalar(length))}
-function renderAt(t){
+function renderAt(t,shotOverride=null){
   time=clamp(Number(t)||0,0,data.duration);
-  activeShot=data.shots.find(s=>time>=s.start&&time<s.end)||data.shots.at(-1);
+  activeShot=shotOverride??(data.shots.find(s=>time>=s.start&&time<s.end)||data.shots.at(-1));
   const actions=sampleActions(data,time);
   if(hingedDoor){hingedDoor.position.fromArray(actions.door.hinge);hingedDoor.rotation.y=actions.door.yaw}
   for(const [index,door] of doors.entries())door.position.fromArray(actions.door.panelPositions[index]);
@@ -174,7 +217,7 @@ function renderAt(t){
     for(const leg of model.legs){const swing=Math.sin(phase)*leg.sign;leg.hip.rotation.x=swing*.39*state.walking;leg.knee.rotation.x=Math.max(0,-swing)*.48*state.walking}
     model.g.updateMatrixWorld(true);
     for(const hand of ['left','right']){
-      const target=model.g.worldToLocal(new THREE.Vector3().fromArray(state.hands[hand].position)),arm=model.arms[hand],active=Boolean(state.hands[hand].contact)||a.prop?.type==='key'&&a.prop.hand===hand;
+      const target=model.g.worldToLocal(new THREE.Vector3().fromArray(state.hands[hand].position)),arm=model.arms[hand],active=Boolean(state.hands[hand].contact)||Boolean(a.handKeys?.[hand])||a.prop?.type==='key'&&a.prop.hand===hand;
       arm.legacy.visible=!active;arm.contactArm.visible=active;
       if(model.hands[hand])model.hands[hand].position.copy(target);
       if(active){
@@ -182,8 +225,16 @@ function renderAt(t){
         setLimb(arm.upper,arm.shoulder,elbow);setLimb(arm.lower,elbow,target);arm.elbowMarker.position.copy(elbow);
       }
     }
+    for(const leg of model.legs){
+      const foot=model.feet[leg.foot],target=model.g.worldToLocal(new THREE.Vector3().fromArray(state.feet[leg.foot].position));
+      const active=Boolean(a.footKeys?.[leg.foot]||state.feet[leg.foot].contact);foot.marker.position.copy(target);foot.targetLeg.visible=active;leg.hip.visible=!active;
+      if(active){const knee=foot.hipPoint.clone().lerp(target,.5);knee.z-=.08;setLimb(foot.upper,foot.hipPoint,knee);setLimb(foot.lower,knee,target)}
+    }
     if(model.keyProp)model.keyProp.position.copy(model.g.worldToLocal(new THREE.Vector3().fromArray(state.prop.position)));
-    model.shadow.position.set(state.position[0],bounds.min[1]+.012,state.position[2]);
+    model.shadow.position.set(state.position[0],(bounds.groundY??bounds.min[1])+.012,state.position[2]);
+  }
+  for(const [id,state] of Object.entries(actions.combat.objects)){
+    const model=combatModels.get(id);model.visible=state.visible;model.position.fromArray(state.position);model.rotation.set(...state.rotation,'XYZ');model.scale.fromArray(state.scale);if(model.userData.lightSource){const supplied=actions.combat.state[id]?.light,settings=typeof supplied==='object'&&supplied?supplied:state.light;model.userData.lightSource.intensity=Number.isFinite(settings?.intensity)?settings.intensity:state.light.intensity;if(typeof settings?.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(settings.color))model.userData.lightSource.color.set(settings.color);}model.updateMatrixWorld(true);
   }
   const pose=sampleCamera(activeShot,time);camera.position.fromArray(pose.position);camera.fov=pose.fov;camera.lookAt(...pose.target);camera.updateProjectionMatrix();camera.updateMatrixWorld();
   draw();
@@ -260,6 +311,19 @@ window.PREVIS={
     if(issues.length)throw new Error(issues.join('\n'));
     return persist({kind:'path-point',actorId,index,position});
   },
+  captureStateAt({time:at,shotId}={}){
+    if(typeof at!=='number'||!Number.isFinite(at)||at<0||at>data.duration)throw new Error('State capture time must be finite inside [0,duration].');
+    const shot=data.shots.find(s=>s.id===shotId);if(!shot)throw new Error('State capture requires an explicit existing shotId.');
+    if(at<shot.start||at>shot.end)throw new Error('State capture time must be inside the selected shot closed interval.');
+    if(dirtyShots().length||!equal(data,savedData))throw new Error('Save or discard unsaved drafts before capturing a source-bound state.');
+    const previous={time,view,selectedObject,selectionPoint:{...selectionPoint},helpers:helpers.visible,selection:selectionBox.visible,walls:walls.visible,controls:controls.enabled,shot:activeShot};
+    try{
+      selectedObject=null;selectionBox.visible=false;helpers.visible=false;walls.visible=true;view='camera';controls.enabled=false;renderAt(at,shot);
+      return {pngBase64:renderer.domElement.toDataURL('image/png').split(',')[1],width:data.width,height:data.height,time:at,shotId:shot.id,provenance:'BOUNDARY_STATE_CAPTURE',is_encoded_video_frame:false};
+    }finally{
+      selectedObject=previous.selectedObject;selectionPoint=previous.selectionPoint;helpers.visible=previous.helpers;selectionBox.visible=previous.selection;walls.visible=previous.walls;view=previous.view;controls.enabled=previous.controls;renderAt(previous.time,previous.shot);
+    }
+  },
   captureFrame(){
     if(view!=='camera')throw new Error('请切回正式机位再记录画面批注。');
     if(dirtyShots().length)throw new Error('请先保存或撤销未保存的机位，再记录来源明确的画面批注。');
@@ -273,9 +337,9 @@ window.PREVIS={
     const actions=sampleActions(data,time);
     const actors=Object.fromEntries(data.actors.map(a=>{
       const model=models.get(a.id),world=mesh=>mesh.getWorldPosition(new THREE.Vector3()).toArray();
-      return [a.id,{...actions.actors[a.id],renderedHands:Object.fromEntries(Object.entries(model.hands).map(([hand,mesh])=>[hand,world(mesh)])),renderedProp:model.keyProp?world(model.keyProp):null}];
+      return [a.id,{...actions.actors[a.id],renderedHands:Object.fromEntries(Object.entries(model.hands).map(([hand,mesh])=>[hand,world(mesh)])),renderedProp:model.keyProp?world(model.keyProp):null,renderedFeet:Object.fromEntries(Object.entries(model.feet).map(([side,foot])=>[side,world(foot.marker)])),geometry:a.geometry??'humanoid',scale:actorScale(a)}];
     }));
-    return {time,shotId:activeShot.id,camera:sampleCamera(activeShot,time),doorOpen:actions.door?.open??null,door:actions.door,actions,clocks:mapSegmentTime(data,time),actors,pathHelpers:Object.fromEntries([...pathLines].map(([id,line])=>[id,Array.from(line.geometry.attributes.position.array)])),selectedObject,selectionPoint,view};
+    return {time,shotId:activeShot.id,camera:sampleCamera(activeShot,time),doorOpen:actions.door?.open??null,door:actions.door,actions,combat:{...actions.combat,renderedObjects:Object.fromEntries([...combatModels].map(([id,model])=>[id,{position:model.getWorldPosition(new THREE.Vector3()).toArray(),rotation:[model.rotation.x,model.rotation.y,model.rotation.z],scale:model.getWorldScale(new THREE.Vector3()).toArray(),visible:model.visible,kind:actions.combat.objects[id].kind,size:actions.combat.objects[id].size,local_geometry_size:model.userData.localGeometrySize,light:model.userData.lightSource?{intensity:model.userData.lightSource.intensity,color:'#'+model.userData.lightSource.color.getHexString(),visible:model.visible}:null}])),renderedContacts:actions.combat.contacts.map(c=>({...c,target_position:combatModels.get(c.target_id).localToWorld(new THREE.Vector3().fromArray(c.local_point)).toArray(),...(c.object_id?{source_position:combatModels.get(c.object_id).localToWorld(new THREE.Vector3().fromArray(c.source_local_point??[0,0,0])).toArray()}:{})}))},clocks:mapSegmentTime(data,time),actors,pathHelpers:Object.fromEntries([...pathLines].map(([id,line])=>[id,Array.from(line.geometry.attributes.position.array)])),selectedObject,selectionPoint,view};
   }
 };
 window.addEventListener('hf-seek',event=>{selectedObject=null;selectionBox.visible=false;setView('camera');renderAt(event.detail.time)});

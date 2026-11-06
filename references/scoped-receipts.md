@@ -61,3 +61,7 @@ findings中的每条记录需要id、summary、route、affected和实际证据�
 revision-requests.json保留来源版本、受影响单元和证据，仅是请求，不执行返修或写回。上游仍通过自己的授权提交机制处理next_required、覆盖和游标；本工具不推进它们。平台未知只阻断实际依赖该能力的目标，不统一阻断正确的本地空间预演。
 
 审查与重新导出分开：修正提示词/代码不说明旧媒体已修好，需要新结果和新检查才能更新对应结论。目标、检查及返修元数据不绘像素，不应仅因写入这些记录让相同视频过期；实质轨迹、模型、素材和时钟仍追踪来源。
+
+## 战斗源扩展
+
+0.6.0添加FIGHT_PREVIS/FIGHT_REVIEW目标及fight_proxy、state_keyframes、attack_response、contact_phase、prop_ownership、persistent_effect、attrition_cost、knowledge_reveal检查。前两项是明确范围的自动采样/状态捕获，后续语义项需绑定实际观察，不能手工覆盖自动项。来源lineage保留provider/unit，不制造formal/prompt/budget。详细输入、时钟和终点状态规则见 [fight-adapter.md](fight-adapter.md)。

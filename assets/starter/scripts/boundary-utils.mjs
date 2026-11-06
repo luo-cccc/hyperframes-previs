@@ -92,7 +92,7 @@ export function sampleClocks(scene,receipt,time_s){
     if(finite(mapping.source_offset_s)&&source.status==='UNKNOWN')source=known(time_s+mapping.source_offset_s,'render-receipt.boundary_time_mapping.source_offset_s');
     if(finite(mapping.timeline_offset_s)&&timeline.status==='UNKNOWN')timeline=known(time_s+mapping.timeline_offset_s,'render-receipt.boundary_time_mapping.timeline_offset_s');
   }
-  return {video,source,segment,timeline};
+  return {video,source,segment,timeline,battle:scene.fightClock&&finite(scene.fightClock.battle_start_s)?{...known(scene.fightClock.battle_start_s+time_s,'EXPLICIT_BATTLE_PRESENTATION_OFFSET'),unit_id:scene.fightClock.unit_id}:unknown('NO_BATTLE_PRESENTATION_MAPPING')};
 }
 export function sampleProxy(scene,time_s,sampler=sampleActions){
   if(typeof sampler!=='function')return {status:'NOT_RUN',scope:'PROXY_ACTION_AND_HAND_STATE',notice:'No pure action sampler is available.'};

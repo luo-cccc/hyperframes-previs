@@ -1,15 +1,17 @@
 ---
 name: hyperframes-previs
-description: 作为 script-to-storyboard-prompts 的下游预演适配技能，接收其有效正式母稿、段内预算、资产档案与首尾状态，转成可调整的 Three.js 三维分镜并用 HyperFrames 导出参考视频。适用于用户要求把已交付分镜做成 HTML/3D 预演；不重做上游七步创作，不凭“继续”自动生成媒体。
+description: 接收 script-to-storyboard-prompts 的有效正式段，或 xianxia-fight-director 的战斗六件套及工作JSON，制作可编辑的Three.js三维预演与HyperFrames参考视频。保留各上游原ID、时钟与证据；用于已交付分镜或打斗的HTML/3D预演，不重做上游创作，不凭“继续”自动生成媒体。
 ---
 
 # HyperFrames 分镜下游预演适配
 
-适配版本 0.5.0。输入 `STORYBOARD_PREVIS_ADAPTER_V1`，新 JSON 状态校验 `SCOPED_STATE_V3`（旧 V2 保留原语义）；画面身份 `PREVIS_RENDER_CONTENT_V2`。将 `script-to-storyboard-prompts` 已交付的母稿编译成可编辑、可审阅的三维预演，原段号、母稿和预算版本不变。Three.js 管场景与动作，HyperFrames 按帧导出。
+适配版本 0.6.0。输入 `STORYBOARD_PREVIS_ADAPTER_V1`，新 JSON 状态校验 `SCOPED_STATE_V3`（旧 V2 保留原语义）；画面身份 `PREVIS_RENDER_CONTENT_V2`。将两种上游已交付的分镜或战斗执行窗口编译成可编辑、可审阅的三维预演，原段号、母稿和预算版本不变。Three.js 管场景与动作，HyperFrames 按帧导出。
 
 ## 开始工作
 
-先读 [references/upstream-adapter.md](references/upstream-adapter.md)，定位用户明确的上游项目、正式段、有效母稿版本与预算版本；读取实际正文、场分析、人物/场景/道具资产及文字首尾状态。输入可为项目文件或可定位的会话交付，不能要求上游额外生产独立分镜设计表。
+先按实际来源选择入口。xianxia-fight-director 阅读 [战斗接入](references/fight-adapter.md)，沿用其自然语言六件套或1.1/1.2工作JSON、原制作段/镜/节拍/关键帧；以下FORMAL/预算/覆盖规则仅属于storyboard上游，不套到战斗源。两个入口共用编辑、渲染与回执，禁止伪造对方的状态字段。
+
+接收script-to-storyboard-prompts时，先读 [references/upstream-adapter.md](references/upstream-adapter.md)，定位用户明确的上游项目、正式段、有效母稿版本与预算版本；读取实际正文、场分析、人物/场景/道具资产及文字首尾状态。输入可为项目文件或可定位的会话交付，不能要求上游额外生产独立分镜设计表。
 
 继承已确认的画幅、完整风格、段长上限、实算时长、镜序、身高厘米数、造型版本、空间方向、原台词、声音职责及揭示时点，不再询问已确认项，也不采用旧演示的 16:9/12 秒作为项目默认。未指定渲染分辨率与 fps 时，默认选择适合该画幅的偶数尺寸及 60 fps，记录为预演技术参数；若预算或切点无法落在 60 fps 整帧上，应选择能精确表达原时码的帧率，不能因此改预算或加剧情。只有影响本次适配的缺项才集中询问。
 
@@ -21,7 +23,7 @@ description: 作为 script-to-storyboard-prompts 的下游预演适配技能，�
 
 ## 制作与修改
 
-1. **接收并映射。** 沿用上游 `formal_id`、`prompt_version`、`budget_version`、资产 ID、镜头 ID 和时间区间。把“景别、机位”“运镜及拍摄主体”“构图”“画面内容”落实为几何尺度、相机、注视点和绝对时间采样；未明确的坐标标为执行补足，不重新导演。所有镜头与动作时间相对当前正式段 0 秒；一镜到底的阶段不拆成切镜。
+1. **接收并映射。** storyboard源沿用上游 `formal_id`、`prompt_version`、`budget_version`、资产 ID、镜头 ID 和时间区间。把“景别、机位”“运镜及拍摄主体”“构图”“画面内容”落实为几何尺度、相机、注视点和绝对时间采样；未明确的坐标标为执行补足，不重新导演。所有运行时镜头与动作相对当前制作单元0秒；战斗源同时保留全场成片时钟，只减段偏移一次，跨镜beat按本镜execution窗口续接。一镜到底的阶段不拆成切镜。
 2. **搭建统一空间。** 使用米制、Y 向上，注明朝向。建立场景、稳定角色 ID、道具归属、门窗等动态结构。角色外形用明确色标区分；提供几何尺度，避免仅凭画面猜比例。
 3. **制作可确定求值的动画。** 任意帧的姿态、位置、镜头和门体状态必须只由 `t` 决定。不得使用累计位移、未固定随机数或上一帧的状态驱动导出。动画素材用 `AnimationMixer.setTime(t)` 或同类绝对采样。浏览器播放计时器只能调用同一 `renderAt(t)`。
 4. **检查与调整。** 逐镜核对母稿、切点和首尾状态；使用画面选择、时间轴、自由观察、机位/FOV 和路径关键点编辑。模板仅预览当前镜头轨迹，不改镜数或预算。确认的镜头/走位可显式加锁；局部撤销只回退对应目标最近的保留修改。涉及正式摄影事实、故事、时长、台词或揭示变化时交回上游返修，不能用模板替换已有导演意图。见 [编辑与画面反馈](references/editor-review.md)。
@@ -64,6 +66,8 @@ node scripts/bundle.mjs --project . --out <项目外的新交付包目录>
 ```
 
 以上命令在模板的 `package.json` 中定义。依赖固定为已验证的 HyperFrames 0.9.10 与 Three.js 0.187.0；新环境可更新，但先查当前官方 API，再重复导出验证，不能只改版本号。
+
+战斗源的终点handoff是逻辑状态，不是MP4最后一帧；按 [战斗接入](references/fight-adapter.md)保留原shot与role，独立状态PNG与实际视频抽帧分别记录。器物、接触、术法、代价和真假轨道须绝对时间求值；未实现部分明确列出。
 
 需要连接预演时读 [接点与时钟](references/boundary-previs.md)，承接既有转场计划、版本、相位和揭示边界；文件边界不自动产生切镜。接点提取仅从实际当前视频取样，不等于运动或声音验收。用户要求受阻时，按 [分项回执](references/scoped-receipts.md)区分已交付文件与目标完成状态，返修仅输出归责请求，不写上游。
 
