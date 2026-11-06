@@ -15,7 +15,7 @@
 
 `scene.editorHistory` 保存最多100条局部 before/after；不保存全场快照来做撤销。撤销 camera 只回退对应镜头，撤销 actor 只回退该角色最近一次路径关键点。当前值与历史 after 不一致说明外部编辑过，拒绝覆盖并要求核对。锁记录不参与撤销，解锁必须单独明确执行。跨项目或上游正式母稿返修不属于此局部历史。
 
-这些编辑元数据不绘制画面，`PREVIS_RENDER_CONTENT_V2` 排除顶层 editLocks/editorHistory；机位、路径、场景代码和素材仍纳入渲染身份。原始文件 revision 继续用于保存 CAS，不能用排除元数据后的画面哈希代替写入冲突检测。
+这些编辑元数据不绘制画面，`PREVIS_RENDER_CONTENT_V2` 排除 editLocks、editorHistory、deliveryGoal、reviewRouting、transitionMap；机位、路径、场景代码和素材仍纳入渲染身份。原始文件 revision 继续用于保存 CAS，不能用排除元数据后的画面哈希代替写入冲突检测。
 
 ## 画面批注与证据
 
@@ -34,6 +34,8 @@ PNG 服务校验签名、尺寸、块完整性和时码引用，不重渲染来�
 
 `npm run spatial-check` 默认按全部导出帧，预算超过20000样本时明确拒绝；需减采样时显式 `--every-frames` 并保留采样说明。报告 `PREVIS_SPATIAL_V1/SAMPLED_PROXY_GEOMETRY`，连续观察合并，不将首末样本范围冒称连续物理证明。
 
-代理人物半径默认0.22米，可用 actor.radius 调整。检查人物相交、走廊边界、地板/天花板、显式 `spatial.obstacles=[{id,min,max}]` AABB；镜头仅检查 `framing={requiredActors:[...],mode:'center'|'full',margin:.02}` 的明确角色，避免把有意裁切或画外人物误判。
+代理人物半径默认0.22米，可用 actor.radius 调整。检查人物相交、当前环境边界、地面／室内天花板／显式空域、显式 `spatial.obstacles=[{id,min,max}]` AABB；镜头仅检查 `framing={requiredActors:[...],mode:'center'|'full',margin:.02}` 的明确角色，避免把有意裁切或画外人物误判。
 
-遮挡是通向代理中心的射线与显式障碍/其他角色代理相交，不是完整轮廓、骨骼/手脚碰撞或像素可见性；动态门、道具和未声明场景不自动推断。默认边界与示例走廊一致，更换场景构造时需对应扩展检查。没有警告只表示本次采样范围未见问题，实际影像、台词和剧情仍需审片。
+遮挡是通向代理中心的射线与显式障碍/其他角色代理相交，不是完整轮廓、骨骼/手脚碰撞或像素可见性；动态门、道具和未声明场景不自动推断。检查边界由 corridor、dutyroom 或 battlefield 的实际数据决定，更换场景构造时同步更新。没有警告只表示本次采样范围未见问题，实际影像、台词和剧情仍需审片。
+
+手部检查同时覆盖普通 handKeys／门接触和战斗接触。ARM_TARGET_UNREACHABLE 显示左右手及真实间隙；固定骨长和请求／实际腕位的字段见[场景契约](scene-contract.md)。战斗工程的 requiredObjects、对象交叠及接触报告见[战斗接入](fight-adapter.md)。这些量测不提升为完整姿态或受力验收。

@@ -1,36 +1,57 @@
-# 场景数据与镜头连续性
+# 场景、相机与动作契约
 
-`scene.json` 是模板的可编辑数据源。Three.js 使用米制、Y 向上，角色默认面向 -Z；摄像机使用透视投影，FOV 单位为度，时间单位为秒。
+scene.json 是每个预演制作单元的可编辑数据源。单位为米、秒、弧度；世界 Y 向上，角色基准朝向 -Z；相机 FOV 为垂直视场角，单位为度。运行时 0 秒属于当前单元。
 
-| 字段 | 用途 |
+## 场景和来源
+
+| 字段 | 当前职责 |
 |---|---|
-| `id/title/duration/width/height/fps` | 项目标识、标题、总时长与输出规格 |
-| `environment` | 支持 corridor 与 dutyroom 的宽、高、长、门位；其他场景需同时实现几何与检查边界 |
-| `actors[].id/role/color/height` | 稳定角色标识、叙事身份、预演色标、身高 |
-| `actors[].path[]` | 按绝对秒排序的 `{t, position:[x,y,z]}` 路径点；首尾覆盖整场 |
-| `shots[].id/start/end/beat` | 稳定镜头 ID、连续且无重叠的时间区间、动作意图 |
-| `shots[].camera.from/to` | 运镜起终点，分别含 `position`、`target`、`fov`；在镜头内平滑插值 |
-| `shots[].camera.offset` | `[dx,dy,dz]` 平移与 `target:[dx,dy,dz]`、`fov` 偏移；审片时可保存 |
-| `door.openStart/openEnd` | 门从关闭到完全打开的绝对时间 |
+| schemaVersion、id、title | 场景格式与本地身份 |
+| duration、width、height、fps | 原单元时长与技术输出规格；切点和时长须落帧网格 |
+| environment.type | corridor、dutyroom 或 battlefield；几何和空间检查采用相同边界 |
+| environment.bounds／ground／worldZero | battlefield 的显式边界、地面和世界原点；不套室内天花板 |
+| actors[].id／role／color／height | 稳定 ID、源角色名、代理色标与米制身高 |
+| actors[].geometry／scale | humanoid、creature、manifestation；支持固定标量或 XYZ 缩放 |
+| actors[].path[] | {t,position:[x,y,z]}，覆盖整个单元的绝对时间路径 |
+| upstream、assetBindings、adaptationMap | 实际来源、资产映射及执行补足；使用 bind-upstream 校验绑定 |
+| fightClock | 原 unit_id 与全场成片起止；战斗时间只减一次段偏移 |
+| timeMapping | 显式素材／段内／剪辑时间映射；没有来源时不发明时钟 |
 
-适配上游时增加 `upstream`、`assetBindings` 和 `adaptationMap`，按 [upstream-adapter.md](upstream-adapter.md) 绑定来源，运行 `npm run bind-upstream`。本模板的绝对时间指当前正式段内统一的 0 秒时钟，不是整部作品或整场拼接时钟。
+corridor／dutyroom 的尺寸、门位和地板构造用于原演示。更换布局时同步几何与 spatial.obstacles，不能把演示房间当作任何剧本的默认舞台。
 
-路径动画按段内绝对时间分段插值；步态按已走距离计算，因此快进、后退、重新导出不改变结果。适配模式重定时若影响上游预算，应交回上游返修；不能在换镜时重新启动走路循环。
+分镜的正式段身份见[分镜接入](upstream-adapter.md)，战斗的原 unit／shot／beat 身份见[战斗接入](fight-adapter.md)。没有绑定来源的新适配工程不能静默退回演示。
 
-镜头 offset 采用世界坐标，在同一镜头起终点同时生效。审片页的 X/Y/Z 是相对原镜头的增量，不是完整摄像机坐标。需要复杂轨迹时直接扩展镜头数据与采样函数。
+## 相机与时间
 
-可选编辑元数据 `editLocks={shots:{},actors:{}}`、`editorHistory={schemaVersion:1,entries:[]}` 与镜头事实分开。锁定是本地编辑承诺，不是上游角色状态；历史仅供目标级撤销。通过项目保存 API 修改以保留CAS与历史，Agent不得通过重写整场来绕过锁。
+shots[].id／start／end 定义连续、无重叠的镜头。普通 seek 使用半开区间 [start,end)，MP4 最后一帧是 duration-1/fps。
 
-可选 `actor.radius`、`scene.spatial.obstacles` 和 `shot.framing` 仅用于明确的代理空间检查，详见 [editor-review.md](editor-review.md)。未声明的需入画角色不猜测，更换示例走廊布局时同时更新其检查边界。
+相机可使用 camera.from／to 的平滑起终点，或覆盖本镜范围的 camera.keys 做线性多关键点采样。每个点含 position、target、fov；两种表示不能混用。camera.offset 采用世界坐标增量，同时作用于本镜的整条轨迹。Studio 的 X／Y／Z 是增量，不是完整坐标。
 
-## 改写成其他剧本
+原关键状态用原 shot_id 的闭区间检查，可恰好位于镜尾或非整帧时刻。captureStateAt 和 state-capture 保留该原镜机位，独立 PNG 不冒充 MP4 帧。实际视频接点只从当前成功视频提取，详见[接点与时钟](boundary-previs.md)。
 
-先列出场景尺寸、角色初始位置、关键动作时刻和镜头目的，然后修改 `scene.json`。模板验证器检查时序、ID、数值、路径覆盖与镜头覆盖；它不能替代视觉判断。穿模、脚滑、道具归属、脸部可见性和轴线需通过画面与俯视检查确认。
+路径、门、注视、道具、资源与机位都按绝对 t 求值，不能靠上一帧累加。路径步态按已走距离计算；转场或分文件不能让已经完成的动作重新起手。慢镜不授权自动改播放速率。
 
-新建布局或导入 glTF 时修改 `src/previs.js`：保持 `renderAt(t)` 与 `hf-seek` 接口，加载器包含在 readiness 中，骨骼动作与道具事件都按绝对时间采样。大动作可先用占位姿态标出意图，不声称简易步态等同于动作捕捉。
+## 手部与固定骨长
 
-镜头移动请求应转成可检查的修改。例如“左移 30 厘米并同时看见两个人”：保存原镜头、修改对应 offset 或轨迹、截取关键时刻、确认两人均在画幅内，再重新导出。不要只写“已优化运镜”而不给出结果。
+actors[].yawKeys／gazeKeys 定义朝向和注视；handKeys／footKeys 定义显式世界目标。门接触使用 actor.contacts，战斗接触使用 combat.contacts。目标轨道需要覆盖 [0,duration]。
 
-## 0.5.0 动作、接点与时钟
+手臂基准为身高 1.8 米角色的上臂 0.32 米、前臂 0.28 米，按角色的固定身高与竖向尺度确定世界骨长。双段代理 IK 通过肩肘旋转求手腕；实际网格抵消父级非均匀缩放，骨段不会为追随目标而伸缩。
 
-`door.type=hinged-door`、`angleKeys`、人物 `yawKeys/gazeKeys/contacts`、相机 `keys` 和可选 `timeMapping` 的完整单位及职责见 [接点与时钟](boundary-previs.md)。这些数据仍由统一绝对时间采样；不因分文件而重置前段已经完成的动作。`deliveryGoal/reviewRouting/transitionMap` 是不绘像素的交付元数据；实质动作、机位、模型、素材和时钟仍属于渲染身份。
+| 采样字段 | 含义 |
+|---|---|
+| hands[side].target_position | 原请求目标；不会为消除间隙被改写 |
+| hands[side].position | 求解后的实际手腕；物件手部附件和接触 gap 使用该位置 |
+| hands[side].ik | 肩、肘、腕、固定长度、reachable、reason 与 reach_error_m |
+| inspect().actors[id].renderedArms | 实际网格边界端点和世界长度，用于浏览器量测 |
+
+超远或过近目标夹到可达范围；空间检查按采样容差报告 ARM_TARGET_UNREACHABLE。完整关节限位、肩胛、蹲身、俯身、支撑和受力并未自动实现。够不到时应按原文补姿态／路径或登记返修，不能用拉长手臂获得假接触。footKeys 仍是脚部代理目标，不据此宣称完成腿部 IK 或支撑验证。
+
+combat.objects 的稳定对象、持物、非实体效果、光源和事件见[战斗接入](fight-adapter.md)。attachment_role=surface 仅用于手部附着 mark，使伤损随实际手腕移动；它不占用持物名额，普通物件仍拒绝同一手重复持物。
+
+## 编辑元数据和检查范围
+
+editLocks、editorHistory、deliveryGoal、reviewRouting、transitionMap 不绘制像素。通过保存 API 修改可保留 revision、目标级历史和锁，不能通过重写整场绕过已锁目标。其他实质场景、轨道、模型、素材和时钟仍进入渲染身份。
+
+actor.radius、spatial.obstacles 和 framing.requiredActors／requiredObjects 只定义声明的代理检查范围。没有声明的需入画对象不猜测；没有警告不等于完整可见性或叙事通过。详见[编辑与审片](editor-review.md)。
+
+导入模型或扩展布景时保持 renderAt(t)、hf-seek 和 readiness；素材加载完成才宣告 ready。实际修改摄影事实、预算或源动作时走上游返修；纯本地实现修复保留原 ID，并重导相关媒体与证据。

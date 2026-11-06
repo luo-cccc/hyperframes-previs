@@ -1,97 +1,86 @@
-# HyperFrames 分镜预演适配 Skill
+# HyperFrames 分镜与战斗预演
 
-当前版本：**0.6.1**。技能入口：[SKILL.md](SKILL.md)。
+当前版本 **0.6.1**。将已交付的分镜或战斗执行稿制作成可编辑的 Three.js 三维预演，再用 HyperFrames 导出参考视频。技能入口为 [SKILL.md](SKILL.md)。
 
-接收 [script-to-storyboard-prompts](https://github.com/luo-cccc/script-to-storyboard-prompts) 已交付的有效正式母稿、同版预算、人物/场景/道具资产与首尾状态，制作可编辑的 Three.js 三维预演，再通过 HyperFrames 逐帧导出参考视频。
+支持两个上游，保留各自的原 ID、时间、资产和来源证据：
 
-保留上游段号、镜序、时码、台词与来源版本。它是可选的下游媒体适配，不重跑上游七步，不推进上游制作覆盖或原文游标。
+| 来源 | 支持输入 | 接入指南 |
+|---|---|---|
+| script-to-storyboard-prompts | 有效正式段、同版预算、资产与首尾状态；状态 1.8/V3 文字、1.9/V4 JSON | [分镜接入](references/upstream-adapter.md) |
+| xianxia-fight-director | 自然语言六件套，或工作 JSON 1.1／1.2 的原制作段 | [战斗接入](references/fight-adapter.md) |
 
-新增 `xianxia-fight-director` 第二上游：接收战斗六件套或工作JSON 1.1/1.2，保留全场/段内时钟、节拍与关键帧ID，提供战斗代理、独立状态图和分范围回执。旧storyboard入口保留。详见 [战斗接入](references/fight-adapter.md)。
+本工具读取上游，写自己的预演工程与回执。上游剧情、制作覆盖、游标和完成状态仍由上游管理。
 
-## 能力
+## 开始使用
 
-- 点击人物或画面位置，记录带对象 ID、镜号、帧号、坐标与来源的 PNG 批注。
-- 调整机位、注视点、FOV、人物路径关键点；当前镜头运镜模板先预览再保存。
-- 服务端镜头/走位锁、目标级撤销、版本冲突保护与有限编辑历史。
-- 按导出帧抽查代理相交、边界、显式障碍及明确要求入画的角色。
-- 干净 MP4、原母稿副本、参考附加说明、独立反馈包和可移动证据工程。
-- 上游 0.4.1 的路径别名、TEXT 检查范围和按正式段选择的转场依赖；旧 V2 工程按原语义复核。
-- 铰链门动作相位、手部代理接触、相机关键点、三时钟映射及实际视频接点证据包。
-- 战斗对象持物／离手／接触、资源消耗、持续术法、真假揭示与非人尺度代理；原时刻关键状态独立捕获。
-- 分项 status/scope/evidence、目标完成状态与本地/上游/平台返修归责。
+验证环境：Node.js 22.22.2、Python 3、HyperFrames 0.9.10、Three.js 0.187.0。依赖由模板 package-lock.json 锁定；Python 接收工具只使用标准库。实际视频探测及接点提取需要 FFmpeg／ffprobe。
 
-画面批注的待处理、已处理与附证据验收分开；旧来源自动标过期。代理检查没有警告不等于完整媒体验收，预演也不保证下游模型精确跟随。
+显式试用独立演示：
 
-## 接入
+~~~text
+node scripts/create_project.mjs work/demo --demo
+cd work/demo
+npm ci
+npm run prepare-libs
+npm run validate
+npm run studio
+~~~
 
-将本仓库作为一个完整技能目录使用，读取 `SKILL.md`。示例请求：
+打开终端输出的本地地址。Studio 占用当前终端；导出命令在同一工程的另一个终端执行。
 
-```text
-使用 $hyperframes-previs，接收指定项目已经交付的 FORMAL_1 / P1 母稿、
-同版预算与资产做三维预演。保留镜序和时长，检查走位与遮挡，
-交付可编辑项目、参考视频和实际反馈。
-```
+正式分镜先使用下列入口创建未绑定工程，再按[接入指南](references/upstream-adapter.md)整理实际来源、资产和镜头映射：
 
-新项目起点：
+~~~text
+node scripts/create_project.mjs work/my-previs
+~~~
 
-```text
-node scripts/create_project.mjs /path/to/new-previs-project
-```
+已有战斗 JSON 可使用：
 
-随后按入口与[上游接入契约](references/upstream-adapter.md)读取真实产物、替换示例场景、填写来源/资产/镜头映射并绑定。模板不是自动剧本解析器；尚未绑定的工程会拒绝退回演示输出。
+~~~text
+node scripts/create_fight_example.mjs work/my-fight --project <真实project.json>
+~~~
 
-仅试运行独立演示时，可显式创建：
+战斗生成器在新目录中为每个原制作段建立独立工程。四个已匹配源签名的案例有专用代理轨道；其他输入明确输出 PARTIAL_LAYOUT_ONLY，后续需按实际执行稿实现动作。仓库不内置上游全文。
 
-```text
-node scripts/create_project.mjs /path/to/demo --demo
-```
+## 检查与交付
 
-在生成的工程中执行 `npm ci`、`npm run prepare-libs`、`npm run studio`。浏览器打开服务实际输出的本地地址。重新渲染使用 `npm run render`，不要直接打开本地 HTML 文件。
+在已绑定、已实现的制作单元目录执行：
 
-模板默认输出 **60 fps**。修改 `scene.json` 中的 `fps` 后运行 `npm run validate` 同步导出入口；总时长与各镜头切点必须落在所选帧率的整帧上，不能为适配帧率修改上游预算。
+~~~text
+npm run validate
+npm run lint
+npm run spatial-check
+npm run render
+npm run handoff
+~~~
 
-## 文档
+战斗工程另运行 npm run fight-check。有 source-keyframes.json 时运行 npm run state-capture；boundary-plan.json 含连接且所有端点已渲染时，再运行 npm run boundary-pack。完整命令与次序见[战斗接入](references/fight-adapter.md)和[接点说明](references/boundary-previs.md)。
 
-| 内容 | 位置 |
+模板默认 **60 fps**，输出尺寸沿用源画幅并使用偶数像素。总时长和切点必须落在帧网格；不能为迎合帧率舍入上游预算。原关键状态可以位于非整帧时刻，通过独立 PNG 捕获。60fps 是离线编码规格，不是实时交互帧率保证。
+
+Studio 支持机位、FOV、路径点、模板预览、锁、目标级撤销、PNG 批注和检查定位。导出读取已保存数据；画面批注、处理状态与附证据验收分别记录。
+
+## 当前能力和限制
+
+上臂／前臂采用固定骨长双段代理 IK。请求目标与实际手腕分别保留；够不到的目标产生真实间隙和 ARM_TARGET_UNREACHABLE，不通过拉长手臂消除间隙。
+
+0.6.1 冻结回归为 **527 项通过，0 失败、0 跳过**，含真实浏览器和独立验证。四类战斗的 12 段视频共 **137 秒、8,220 帧**，另有 51 张原时刻状态 PNG、33 组实际视频接点。详细范围见[验证索引](evals/README.md)。
+
+这些样例的动作轨道仍存在不可达目标等限制：当前 12 段 FIGHT_PREVIS 均保持 BLOCKED，共保留 131 组代理告警。软件测试通过不表示动作接触或整场语义验收完成；部分动作仍需蹲身、俯身等姿态排演。完整关节限位、腿部支撑、受力、声音口型、原角色身份和最终视频模型生成未被本包自动验收。
+
+## 文档导航
+
+| 需要做的事 | 文档 |
 |---|---|
-| 技能入口与工作流 | [SKILL.md](SKILL.md) |
-| 上游版本、输入与返修边界 | [upstream-adapter.md](references/upstream-adapter.md) |
-| 编辑、锁、撤销、批注与空间抽查 | [editor-review.md](references/editor-review.md) |
-| 场景字段与时钟 | [scene-contract.md](references/scene-contract.md) |
-| 渲染、来源指纹与失败处理 | [runtime.md](references/runtime.md) |
-| 返回视频模型的参考包 | [handoff.md](references/handoff.md) |
-| 接点、动作相位与时钟 | [boundary-previs.md](references/boundary-previs.md) |
-| 仙侠战斗源与代理 | [fight-adapter.md](references/fight-adapter.md) |
-| 分项回执与返修归责 | [scoped-receipts.md](references/scoped-receipts.md) |
-| 可移动工程与冻结证据 | [portable-bundle.md](references/portable-bundle.md) |
-| 采纳的设计与暂缓能力 | [adopted-designs.md](references/adopted-designs.md) |
-| 用户使用回归场景 | [user-scenarios.md](evals/user-scenarios.md) |
-| 60 fps 实测记录 | [60fps-smoke-2026-11-05.md](evals/60fps-smoke-2026-11-05.md) |
-| 用户模拟与修复回归 | [user-simulation-2026-11-06.md](evals/user-simulation-2026-11-06.md) |
-| 0.5.0 三批落地验收 | [0.5.0-three-batch-acceptance.md](evals/0.5.0-three-batch-acceptance.md) |
-| 0.6.0 战斗接入、媒体与独立模拟 | [0.6.0-fight-three-batch-acceptance.md](evals/0.6.0-fight-three-batch-acceptance.md) |
-| 0.6.1 固定手臂长度、实际可达性与新视频 | [0.6.1-fixed-arm-length.md](evals/0.6.1-fixed-arm-length.md) |
+| 使用技能接收任务 | [SKILL.md](SKILL.md) |
+| 接收正式分镜／战斗 | [分镜接入](references/upstream-adapter.md) · [战斗接入](references/fight-adapter.md) |
+| 编写场景、相机、动作和手臂目标 | [场景契约](references/scene-contract.md) · [镜头复用](references/camera-patterns.md) |
+| 编辑、锁、撤销、批注和空间检查 | [编辑与审片](references/editor-review.md) |
+| 运行、导出、指纹和状态捕获 | [运行时](references/runtime.md) |
+| 处理时间映射和真实视频接点 | [接点与时钟](references/boundary-previs.md) |
+| 返回文件、验收目标和返修 | [交付清单](references/handoff.md) · [分项回执](references/scoped-receipts.md) |
+| 移动工程或离线交接 | [便携包](references/portable-bundle.md) |
+| 维护目录、检查和清理 | [维护指南](references/maintenance.md) |
+| 查验证结论和历史修复 | [验证索引](evals/README.md) |
 
-## 运行与验证边界
-
-验证基线为 Node.js 22.22.2、HyperFrames 0.9.10、Three.js 0.187.0；Python 提取工具只用标准库。模板包含本地 Three.js 浏览器文件，其 MIT 许可保留在 [THREE-LICENSE.txt](assets/starter/lib/THREE-LICENSE.txt)。
-
-此前已完成隔离用户模拟、锁/撤销/批注/来源回归，以及真实 12 秒、1280×720、24fps、288 帧的 HyperFrames 导出。默认值现已调整为 60 fps，并于 2026-11-05 完成同规格 12 秒、60 fps、720 帧的实际导出、完整解码、帧数探测、切点及非顺序跳转检查。仓库中的 `evals/user-scenarios.md` 是回归场景说明，不应描述为已包含完整自动化测试套件。
-
-示例使用色标占位人物与基础步态。声音、口型、复杂动作和最终视频模型生成未在该示例中验证。捕获 PNG 标为 `USER_CAPTURE_UNVERIFIED`，服务检查文件完整性与来源引用，不声称已重渲染比较像素。
-
-## 回归检查
-
-```text
-node scripts/check_project.mjs --report outputs/checks.json
-```
-
-该命令运行仓库内 Node/Python 契约测试，需要 Node.js、Python 以及媒体测试使用的 FFmpeg/ffprobe。真实浏览器使用、实际视频和用户输入语义仍按独立记录核验。接点联合演示：`node scripts/create_dutyroom_example.mjs outputs/dutyroom-demo`，生成独立的 F1/F2 测试工程。
-
-0.5.0 已完成冻结源码的 **206 项回归（0 失败、0 跳过）**、两段 60 fps 实际导出与独立用户模拟；详细范围、初始失败闭环、声音缺项及测试隔离偏差见上述三批验收记录，不代表最终平台媒体已生成或通过。
-
-战斗源示例从用户提供的真实JSON创建，不把上游全文打包进本仓库：`node scripts/create_fight_example.mjs outputs/fight-demo --project <已有战斗JSON>`。单元内依次运行 `npm run fight-check`、`npm run render`、`npm run state-capture`、`npm run boundary-pack`、`npm run handoff`，媒体与语义各按实际范围记录。
-
-0.6.0 完成 **449 项回归（0 失败、0 跳过）**，四类战斗的 12 段 60fps MP4 共 137 秒／8,220 帧、51 张原时刻状态 PNG 和 33 组实际视频接点。代理几何仍有 10 组保守告警，相关 5 段的 FIGHT_PREVIS 保持 BLOCKED；音频、骨骼受力、最终身份与模型语义未被自动验收。详见 0.6.0 验收记录。
-
-0.6.1 修复手臂随目标距离伸缩：上臂／前臂固定骨长，保留原请求与实际手腕的真实间隙，普通场景和战斗场景统一报警。**527 项回归全部通过，0 跳过**；实际网格与全帧骨长另行核对。不可达目标仍需调整姿态，不通过拉伸手臂获得假接触。
+仓库中的 tests/ 是可执行契约回归，入口为 node scripts/check_project.mjs。默认运行会明确跳过未启用的真实浏览器项；启用方法见维护指南。历史记录中的 outputs/ 链接属于本机证据，Git 仓库不包含视频、缓存、依赖或上游正文。

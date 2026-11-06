@@ -1,6 +1,6 @@
 # 分项检查、目标状态与返修
 
-npm run handoff输出checks.json、previs-receipt.json、revision-requests.json及manifest。绑定工程继续返回上游母稿逐字副本；独立demo只返回demo说明，不生成假母稿。
+npm run handoff输出checks.json、previs-receipt.json、revision-requests.json及manifest。分镜工程返回上游母稿逐字副本，战斗工程返回来源执行文本视图与原 ID 映射；独立 demo 只返回演示说明。文件列表见[交付清单](handoff.md)。
 
 ## 分开记录交付与完成
 
@@ -10,7 +10,18 @@ npm run handoff输出checks.json、previs-receipt.json、revision-requests.json�
 {"id":"review-join-1","target":"BOUNDARY_REVIEW","required_checks":["audio"]}
 ~~~
 
-target为PREVIS、BOUNDARY_REVIEW、MODEL_SUBMISSION或FINAL_MODEL。PREVIS默认要求来源结构和实际视频规格；BOUNDARY_REVIEW另要求接点来源、提取、画面及运动。平台提交和最终模型目标分别保留能力、真实输入、实际提交和最终媒体的必要条件，不能用required_checks空数组取消。
+目标保留以下必需项；required_checks 只能增加要求，空数组不能取消必需项。
+
+| target | 默认必需检查 |
+|---|---|
+| PREVIS | source_structure、render_specs |
+| BOUNDARY_REVIEW | 上述两项及 boundary_source、boundary_extraction、boundary_frame、boundary_motion |
+| FIGHT_PREVIS | source_structure、render_specs、fight_proxy |
+| FIGHT_REVIEW | 上述三项及 state_keyframes、attack_response、contact_phase、prop_ownership、persistent_effect、attrition_cost |
+| MODEL_SUBMISSION | source_structure、capability、inputs、platform_submission |
+| FINAL_MODEL | 上述四项及 final_model |
+
+声音或真假揭示属于本次目标时，显式把 audio／knowledge_reveal 加入 required_checks。
 
 目标状态为COMPLETED、IN_PROGRESS、BLOCKED；delivered_artifacts单独列文件。缺实际声音、平台模式未知或只有条件计划时，相关检查保持NOT_RUN/UNKNOWN/PENDING，目标如实未完成。仅有MP4不代表最终模型交付已完成。
 
@@ -18,7 +29,7 @@ target为PREVIS、BOUNDARY_REVIEW、MODEL_SUBMISSION或FINAL_MODEL。PREVIS默�
 
 ## 实际检查记录
 
-自动项包括source_structure、render_specs、spatial_proxy、boundary_source和boundary_extraction；其scope说明实际程序检查范围。代理空间无警告不代替像素可见性、接触或剧情检查。提取成功只使extraction通过，画面/动态/声音仍需实际观察。
+自动项包括 source_structure、render_specs、spatial_proxy、boundary_source、boundary_extraction、fight_proxy 和 state_keyframes；其scope说明实际程序检查范围。代理空间无警告不代替像素可见性、接触或剧情检查。提取成功只使extraction通过，画面/动态/声音仍需实际观察。
 
 新增adapter-review.json采用PREVIS_REVIEW_V2：
 
@@ -62,6 +73,8 @@ revision-requests.json保留来源版本、受影响单元和证据，仅是请�
 
 审查与重新导出分开：修正提示词/代码不说明旧媒体已修好，需要新结果和新检查才能更新对应结论。目标、检查及返修元数据不绘像素，不应仅因写入这些记录让相同视频过期；实质轨迹、模型、素材和时钟仍追踪来源。
 
-## 战斗源扩展
+## 战斗源与真实接触
 
-0.6.0添加FIGHT_PREVIS/FIGHT_REVIEW目标及fight_proxy、state_keyframes、attack_response、contact_phase、prop_ownership、persistent_effect、attrition_cost、knowledge_reveal检查。前两项是明确范围的自动采样/状态捕获，后续语义项需绑定实际观察，不能手工覆盖自动项。来源lineage保留provider/unit，不制造formal/prompt/budget。详细输入、时钟和终点状态规则见 [fight-adapter.md](fight-adapter.md)。
+fight_proxy 只表示声明代理范围的采样结果，state_keyframes 只表示原状态图的身份与完整覆盖。attack_response、contact_phase、prop_ownership、persistent_effect、attrition_cost、knowledge_reveal 必须有实际语义／画面观察证据，不能从原作者 review 或结构测试自动提升。
+
+固定骨长检查使用实际手腕计算接触 gap。不可达目标或其他 fight-check 告警会让 fight_proxy 保持 FAIL，相关目标 BLOCKED；不通过手改审阅覆盖自动失败。来源 lineage 保留 provider／unit，不制造 formal／prompt／budget。详细输入、时钟和终点状态规则见[战斗接入](fight-adapter.md)。

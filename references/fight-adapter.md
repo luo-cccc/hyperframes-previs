@@ -1,6 +1,6 @@
 # 仙侠打斗导演预演接入
 
-0.6.0新增xianxia-fight-director第二上游；原script-to-storyboard-prompts正式段入口保留。来源按明确provider路由，不把战斗制作段改名为FORMAL，也不要求伪造RUN_STATE、覆盖、P/B版本或TEXT=PASS。
+当前支持 xianxia-fight-director 与 script-to-storyboard-prompts 两种上游。本文只描述战斗入口。来源按明确provider路由，不把战斗制作段改名为FORMAL，也不要求伪造RUN_STATE、覆盖、P/B版本或TEXT=PASS。
 
 ## 接收哪种交付
 
@@ -56,7 +56,7 @@ npm run boundary-pack -- --plan boundary-plan.json
 npm run handoff
 ~~~
 
-fight-check输出逐帧声明代理抽查，范围限对象身份、归属与接触gap。它不判断战术因果、动画表演、效果遮挡、骨骼或声音。source-execution.md是原执行字段的来源视图，不是完整导演稿，也不声称自动生成了平台可提交成品。
+fight-check 输出逐帧声明代理抽查，覆盖对象身份、归属、真实接触 gap、手臂可达性与采样几何。它不判断战术因果、完整姿态表演、像素遮挡、真实关节限位、受力或声音。source-execution.md是原执行字段的来源视图，不是完整导演稿，也不声称自动生成了平台可提交成品。
 
 ## 状态图与视频抽帧分开
 

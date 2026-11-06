@@ -3,83 +3,43 @@ name: hyperframes-previs
 description: 接收 script-to-storyboard-prompts 的有效正式段，或 xianxia-fight-director 的战斗六件套及工作JSON，制作可编辑的Three.js三维预演与HyperFrames参考视频。保留各上游原ID、时钟与证据；用于已交付分镜或打斗的HTML/3D预演，不重做上游创作，不凭“继续”自动生成媒体。
 ---
 
-# HyperFrames 分镜下游预演适配
+# HyperFrames 分镜与战斗预演
 
-适配版本 0.6.1。输入 `STORYBOARD_PREVIS_ADAPTER_V1`，新 JSON 状态校验 `SCOPED_STATE_V3`（旧 V2 保留原语义）；画面身份 `PREVIS_RENDER_CONTENT_V2`。将两种上游已交付的分镜或战斗执行窗口编译成可编辑、可审阅的三维预演，原段号、母稿和预算版本不变。Three.js 管场景与动作，HyperFrames 按帧导出。
+适配版本 0.6.1。将上游已交付的镜头和执行窗口实现为可编辑、可审阅的三维预演；Three.js 负责绝对时间采样，HyperFrames 逐帧导出。
 
-## 开始工作
+## 选择来源
 
-先按实际来源选择入口。xianxia-fight-director 阅读 [战斗接入](references/fight-adapter.md)，沿用其自然语言六件套或1.1/1.2工作JSON、原制作段/镜/节拍/关键帧；以下FORMAL/预算/覆盖规则仅属于storyboard上游，不套到战斗源。两个入口共用编辑、渲染与回执，禁止伪造对方的状态字段。
+| 当前任务 | 先读 | 保留的来源身份 |
+|---|---|---|
+| script-to-storyboard-prompts 正式分镜 | [分镜接入](references/upstream-adapter.md) | formal_id、prompt_version、budget_version、原镜与资产 |
+| xianxia-fight-director 战斗预演 | [战斗接入](references/fight-adapter.md) | 原 unit／shot／beat／keyframe、全场时间与来源 revision |
+| 本技能工程的局部编辑或返修 | [编辑与审片](references/editor-review.md) | 当前已绑定来源、锁、保存版本及受影响对象 |
 
-接收script-to-storyboard-prompts时，先读 [references/upstream-adapter.md](references/upstream-adapter.md)，定位用户明确的上游项目、正式段、有效母稿版本与预算版本；读取实际正文、场分析、人物/场景/道具资产及文字首尾状态。输入可为项目文件或可定位的会话交付，不能要求上游额外生产独立分镜设计表。
+沿用已确认的画幅、风格、时长、镜序、资产、空间关系、台词和揭示时刻。实际读取原文与证据；只有影响本次实现的缺项才集中询问。不要求上游补独立分镜设计表，不凭状态版本猜技能包版本，也不将战斗段伪装成 FORMAL／P/B／DONE。
 
-继承已确认的画幅、完整风格、段长上限、实算时长、镜序、身高厘米数、造型版本、空间方向、原台词、声音职责及揭示时点，不再询问已确认项，也不采用旧演示的 16:9/12 秒作为项目默认。未指定渲染分辨率与 fps 时，默认选择适合该画幅的偶数尺寸及 60 fps，记录为预演技术参数；若预算或切点无法落在 60 fps 整帧上，应选择能精确表达原时码的帧率，不能因此改预算或加剧情。只有影响本次适配的缺项才集中询问。
+本适配器只读上游，在下游工程写实现、媒体和回执。一个已授权预演请求内可连续完成读取、搭建、检查和导出；用户仅说“继续”时沿已确认的当前任务推进，不因此切换流程或新增媒体交付。
 
-上游七步和正式段覆盖继续由上游管理。本适配器读取权威状态，在 `<项目>/previs/<formal_id>/<prompt_version>/` 写自己的文件，不修改上游 `next_required`、游标、覆盖、母稿或预算。用户仅说“继续”时按上游当前目标执行；只有当前请求包含预演或已明确选择预演交付时才接入。一个已授权预演请求内，读取、搭建、检查、导出可以连续完成。
+## 实现和检查
 
-接收上游技能 0.4.1，支持状态 1.8/V3 的现有文字交付与 1.9/V4 的 JSON 项目；不以状态版本推测技能包版本。JSON 使用 `scripts/intake_storyboard.py` 只读提取；自由文本/会话由代理实际读取并整理，使用 `scripts/finalize_manual_intake.py` 封存真实证据，不自动迁移或猜解析旧状态。正常推进其他段不会使目标段自动失效；本段版本、相关资产、首尾与所选原文改变时重新适配。旧版 STATE_JSON intake 缺少范围校验资料时明确重提取，不静默升级。
+1. **映射来源。** 保留原 ID、预算和原文。运行时统一采用当前单元 0 秒；战斗只减一次全场段偏移，按当前 execution.cues 续接，不每镜重播完整跨镜 beat。不把一镜内的动作阶段拆成新镜。
+2. **搭建与采样。** 米制、Y 向上，明确朝向与执行补足。所有姿态、物件、事件和机位由 t 决定，直接跳转与顺序播放一致。默认 60fps；预算或切点不落整帧时选择能精确表达原时码的帧率，不舍入预算。
+3. **保持真实约束。** 手臂采用固定骨长双段代理 IK；保留请求目标、实际手腕与不可达间隙。需要改原事实或正式摄影意图时交回上游；本地实现错误则在下游修复。简化代理不证明完整关节限位、受力或最终模型表现。
+4. **编辑和导出。** 先核对来源与已保存数据，再做空间／战斗检查和实际渲染。机位、路径、锁、撤销、PNG 批注按[编辑说明](references/editor-review.md)操作。导出使用 npm run render，保留真实回执；代码、模型、素材或相关来源变化后重新生成证据。
+5. **按范围交付。** 原状态 PNG 与实际 MP4 抽帧分开，闭端点保留原前镜归属。返回原稿、可编辑工程、参考视频和分项检查；交付文件存在不代表目标 COMPLETED。声音、平台或最终模型未实际执行时保留其真实状态。
 
-使用足以检查构图、走位、遮挡与时机的最简几何体。稳定色标对应上游人物，环境只保留相关空间和地标；需要详细动作再接有权使用的模型。图片职责、动作职责和镜头职责分开，不承诺简化预演能强制下游模型逐像素跟随。
+## 按需读取
 
-## 制作与修改
+| 工作内容 | 参考 |
+|---|---|
+| scene.json、相机、手部 IK、检查边界 | [场景契约](references/scene-contract.md) |
+| HyperFrames 初始化、导出、指纹与状态截图 | [运行时](references/runtime.md) |
+| 门动作、时间映射与跨工程视频接点 | [接点与时钟](references/boundary-previs.md) |
+| 同镜运动模板和布景复用 | [镜头复用](references/camera-patterns.md) |
+| 交付文件、模型参考职责 | [交付清单](references/handoff.md) |
+| PREVIS_REVIEW_V2、目标门槛和返修归责 | [分项回执](references/scoped-receipts.md) |
+| 外部来源与便携工程 | [便携包](references/portable-bundle.md) |
+| 维护、测试、目录与清理 | [维护指南](references/maintenance.md) |
+| 当前版本和历史验证范围 | [验证索引](evals/README.md) |
+| 外部设计思路的采用边界 | [采用说明](references/adopted-designs.md) |
 
-1. **接收并映射。** storyboard源沿用上游 `formal_id`、`prompt_version`、`budget_version`、资产 ID、镜头 ID 和时间区间。把“景别、机位”“运镜及拍摄主体”“构图”“画面内容”落实为几何尺度、相机、注视点和绝对时间采样；未明确的坐标标为执行补足，不重新导演。所有运行时镜头与动作相对当前制作单元0秒；战斗源同时保留全场成片时钟，只减段偏移一次，跨镜beat按本镜execution窗口续接。一镜到底的阶段不拆成切镜。
-2. **搭建统一空间。** 使用米制、Y 向上，注明朝向。建立场景、稳定角色 ID、道具归属、门窗等动态结构。角色外形用明确色标区分；提供几何尺度，避免仅凭画面猜比例。
-3. **制作可确定求值的动画。** 任意帧的姿态、位置、镜头和门体状态必须只由 `t` 决定。不得使用累计位移、未固定随机数或上一帧的状态驱动导出。手臂使用固定骨长的双段代理IK，保留请求目标与实际手腕；超出臂展应报告不可达间隙，不能通过拉伸手臂强行贴合。动画素材用 `AnimationMixer.setTime(t)` 或同类绝对采样。浏览器播放计时器只能调用同一 `renderAt(t)`。
-4. **检查与调整。** 逐镜核对母稿、切点和首尾状态；使用画面选择、时间轴、自由观察、机位/FOV 和路径关键点编辑。模板仅预览当前镜头轨迹，不改镜数或预算。确认的镜头/走位可显式加锁；局部撤销只回退对应目标最近的保留修改。涉及正式摄影事实、故事、时长、台词或揭示变化时交回上游返修，不能用模板替换已有导演意图。见 [编辑与画面反馈](references/editor-review.md)。
-5. **检查并导出。** 做数据与来源检查、代理空间抽查、实际逐帧导出，检查视频规格、首尾和切点。只对明示 `framing.requiredActors` 检查入画，空间警告需看画面确认，不以程序无警告替代媒体验收。批注包含实际 PNG、段内时码、对象 ID、坐标和来源；来源变化则标过期，已处理与已验收分开。
-6. **返回适配产物。** 交付干净视频、源项目、来源映射、原母稿的逐字副本、参考素材附加说明与实际检查回执。上游母稿或已有模型适配稿继续作为提示词来源，不用模板自动生成的简短提示词替换它。回执只代表本地预演检查；最终模型提交与生成能力仍由对应模型适配处理。
-
-## 可复用起点
-
-`assets/starter/` 是运行时示例，包含审片页、绝对时间采样、保存与导出。走廊、人物、道具、三镜和开门事件都是演示内容；接收上游时按实际输入替换几何与动作，不能自动沿用这些剧情元素。没有图片时可按有效文字档案使用色标占位，明确只验证空间和时序。
-
-```text
-node <skill-dir>/scripts/create_project.mjs <project-dir>
-python -X utf8 <skill-dir>/scripts/intake_storyboard.py --state <上游状态JSON> --budget <上游预算JSON> --formal-id FORMAL_1 --out <project-dir>/upstream-intake.json
-cd <project-dir>
-npm install
-npm run prepare-libs
-```
-
-读取完整母稿后，先把真实资产、镜头与动作落实为 `scene.json` 和场景代码，写 `assetBindings`、`sourceAssetIds` 和 `adaptationMap`。再运行以下绑定与检查，不能跳过绑定让工程退回演示分支：
-
-```text
-npm run bind-upstream
-npm run validate
-npm run studio
-```
-
-`sourceAssetIds.scenes/props` 明确列本段实际使用的资产 ID，无使用项写 `[]`。角色通过 `assetBindings` 指定 LOOK/STATE 版本与身高。数值、版本和依赖检查不替代剧情、台词与摄影语义核对。
-
-`studio.html` 审片，`index.html` 干净导出。点击人物选对象，空白处选画面点。单镜/关键点保存不夹带其他草稿；冲突明确提示。锁由服务端强制，局部撤销保留100条历史，外部改动冲突时拒绝覆盖。捕获先保存或撤销机位草稿，切回正式机位，隐藏选框并对齐到视频帧。
-
-```text
-npm run lint
-npm run spatial-check
-npm run snapshot
-npm run render
-npm run boundary-pack
-npm run handoff
-npm run feedback
-node scripts/bundle.mjs --project . --out <项目外的新交付包目录>
-```
-
-以上命令在模板的 `package.json` 中定义。依赖固定为已验证的 HyperFrames 0.9.10 与 Three.js 0.187.0；新环境可更新，但先查当前官方 API，再重复导出验证，不能只改版本号。
-
-战斗源的终点handoff是逻辑状态，不是MP4最后一帧；按 [战斗接入](references/fight-adapter.md)保留原shot与role，独立状态PNG与实际视频抽帧分别记录。器物、接触、术法、代价和真假轨道须绝对时间求值；未实现部分明确列出。
-
-需要连接预演时读 [接点与时钟](references/boundary-previs.md)，承接既有转场计划、版本、相位和揭示边界；文件边界不自动产生切镜。接点提取仅从实际当前视频取样，不等于运动或声音验收。用户要求受阻时，按 [分项回执](references/scoped-receipts.md)区分已交付文件与目标完成状态，返修仅输出归责请求，不写上游。
-
-字段见 [场景契约](references/scene-contract.md)，来源/返修见 [上游适配](references/upstream-adapter.md)，锁/撤销/批注/空间检查见 [编辑与画面反馈](references/editor-review.md)。按需读 [渲染运行时](references/runtime.md)、[返回包](references/handoff.md) 和 [可移动交付](references/portable-bundle.md)。采纳与暂缓的外部设计见 [设计依据](references/adopted-designs.md)，无需把外部仓库当制作前驱。
-
-## 交付判断
-
-- 叙事动作可辨认，人物/机位/道具在各镜头间有连续依据。对轴线、遮挡和穿模要实际检查；若有意跨轴，说明用什么镜头建立方向。
-- 同一时刻在顺序播放、直接跳转和倒序跳转后得到相同状态；至少验证一次非顺序采样，例如 `8 → 2 → 8`。
-- 原台词与声音时间完整保留在映射与回执；未合成声音、未实现口型或复杂动作时明确写未检查项。资产提示词已交付、图片存在、图片已读取、模型已绑定分别记录。
-- 同一正式段默认独立导出；拼场或跨段拼接须有相应请求，另存偏移映射。文件边界不自动变成切镜，不重复前段事件，不延长或舍入预算；非整帧尾料需明确记录源时钟与成片时钟映射。
-- 导出使用保存后的镜头数据。首帧已加载完毕，无黑帧、缺资源、误入画面的审片界面或切点残影。
-- 导出先暂存并检查再发布；失败保留旧成功视频。加锁、写历史和批注不改变画面身份，实质机位/路径/模型/代码变化才使旧画面证据过期。审片仍需四项关联一致。批注的 VERIFIED 只表示用户登记了单独证据，不代替最终模型媒体验收。
-- 模型生成会重新解释材质、肢体和细节。将“必须保留的构图与动作意图”和“允许自然化的表演与质感”写清楚，不承诺像素级或骨骼级控制。
-- 最终报告写明实际完成与实际验证的范围。未提供角色参考或未运行下游模型时，不将色块人物描述为角色一致性验证，也不将预演输出描述为最终生成成片。
+新工程入口为 scripts/create_project.mjs；值班室联合演示使用 scripts/create_dutyroom_example.mjs；战斗 JSON 示例使用 scripts/create_fight_example.mjs。演示必须显式选择，泛化战斗布局不能冒充已实现完整动作。当前模板与样例的具体能力、限制以实际代码和[README](README.md)为准。

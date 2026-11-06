@@ -34,7 +34,7 @@ python -X utf8 scripts/intake_storyboard.py --state /actual/project/run-state.js
 
 `run-state.txt`、会话产物和非标准旧记录由代理实际阅读后整理成相同 `upstream-intake.json`，`input_mode=MANUAL_TRANSCRIPTION`，保留可定位原始交付与文件哈希；不能让程序猜测自由文本，也不能把手工规范化快照当成新的权威状态。会话无本地文件时，将用户实际提供的正文逐字保存为输入证据，记录会话定位；仍缺少必要证据时不伪造 PASS。
 
-提取结果的 `semantic_review=NOT_RUN` 表示程序不验证剧情语义、原台词完整性或用户决定真实性。语义与媒体检查按实际范围记录，完成渲染与实际审片后，可用 `PREVIS_REVIEW_V1` 格式记录证据；四项关联哈希见 [handoff.md](handoff.md)。不能把静态结构通过当成审片完成。
+提取结果的 `semantic_review=NOT_RUN` 表示程序不验证剧情语义、原台词完整性或用户决定真实性。语义与媒体检查按实际范围记录，完成渲染与实际审片后，新增审阅使用 `PREVIS_REVIEW_V2` 分项记录证据；旧 V1 仅按原范围兼容。四项关联哈希和目标门槛见[分项回执](scoped-receipts.md)。不能把静态结构通过当成审片完成。
 
 ## intake 契约与三维项目
 
