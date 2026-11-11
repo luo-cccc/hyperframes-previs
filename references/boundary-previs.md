@@ -1,34 +1,24 @@
-# 接点、代理动作与三种时钟
+# 状态图、视频接点与时钟
 
-本模块用于已实现动作、时间映射与实际视频接点。分镜来源保留上游 0.4.1 的母稿、预算和 transition_plan/review；战斗来源保留原 unit／shot 与全场成片时钟。纯计划和实际素材分别保存，不自动增加切镜、正式段或平台任务。
+本页区分原时刻状态图和实际视频抽帧，并说明跨工程连接与时间映射。动作轨道及门接触字段见[场景契约](scene-contract.md)。
 
-## 接收与局部过期
+## 原状态与编码帧
 
-新JSON intake使用SCOPED_STATE_V3；旧V2按原语义复核，不静默升级。source_script_ref.path/location均可用，冲突时拒绝。未提供真实上游包目录时upstream_provenance保持UNKNOWN；提供 --upstream-skill-dir 后记录包版本、Git提交及文档哈希，包的全局变动不成为剧情失效依据。
+普通镜头播放采用 [start,end)，视频最后一帧位于 duration−1/fps。原关键状态可以位于镜头闭区间 [start,end]，包括非整帧时刻和前镜终点；9.5 秒、60fps 的视频有 570 帧，末帧为 569/60 秒，原 9.5 秒交接状态需另捕。
 
-transition_context从本段相关、版本适用的原记录抽取plans、reviews及端点依赖。core事实与转场分开：母稿/预算/相关资产变动仍拒绝使用旧适配；仅相关连接变化使transitions.status=STALE，本段正确母稿与旧成功视频可保留，相关接点证据需要重新核对。其他段推进不应使本段失效。TEXT的status/scope/evidence共同参与新core指纹；缺少历史scope要明确记录，不能伪造人工核对。
+`npm run state-capture` 默认读取项目根目录 `source-keyframes.json`（`PREVIS_SOURCE_KEYFRAMES_V1`）。计划逐项给出 id、shot_id、role、段内 time_s，可带 battle_time_s；role 为 single/prep/contact/result/handoff。程序在明确指定的原镜头机位捕获独立 PNG，保留 `BOUNDARY_STATE_CAPTURE/is_encoded_video_frame=false`，不延长预算。战斗源的帧身份、角色和原时刻不允许改写；只捕部分帧会记录 PARTIAL，不能让完整覆盖检查通过。
 
-## 确定求值的代理动作
+状态包位于 `review/state-captures/`，报告为 `review/state-capture-report.json`。CLI 不覆盖已有包，重复捕获选新的 `--out`；Studio 会先复核并复用有效报告。此类 PNG 不承担 MP4 抽帧或运动连续性证据。
 
-所有新增轨迹均使用段内绝对秒，角度为弧度。未实现真实模型、动作捕捉、口型或声音时明确保留未检查状态。
+## 三种时间映射
 
-- door.type=hinged-door：hinge为世界XYZ，size为[宽,高,厚]，closedYaw为关门朝向，swingSign为+1或-1。angleKeys=[{t,angle},...]显式覆盖0到duration；下一正式段可以从已半开的角度继续，不能重播前半动作。旧sliding-door的openStart/openEnd继续支持。
-- actor.yawKeys=[{t,yaw},...]、gazeKeys=[{t,target:[x,y,z]},...]显式覆盖全段，线性采样，不猜最短转向或揭示时点。
-- actor.contacts=[{hand:'left',targetId:'door',localPoint:[x,y,z],start,end}]将手部代理目标按当前门变换到世界坐标。局部点必须在门体内；同手相交职责被拒绝。它声明请求目标；0.6.1 的固定骨长 IK 另求实际手腕和真实 gap，够不到时报告 ARM_TARGET_UNREACHABLE。有限几何可达不证明关节限位或真实皮肤接触。
-- actor.prop.type=key、hand='right'可保持道具随指定手移动；不因需要连接就凭空增加道具。原步态和block-rifle示例保持独立演示用途。
-- camera.keys=[{t,position,target,fov},...]可表达多个运镜阶段，起止覆盖当前shot。旧from/to/offset保留；替换当前运镜模板会采用该模板自己的完整轨迹，不改变镜序或预算。
-
-纯采样接口在src/action-data.js，时间映射在src/time-mapping.js；PREVIS.inspect()暴露代理状态用于核对非顺序采样。环境dutyroom有独立边界和铰链门几何，走廊仍按其原边界检查。动态门接触、手臂和像素遮挡不是空间代理检查的通用物理证明。
-
-## 三时钟映射
-
-可选scene.timeMapping：
+运行时始终使用当前单元 0 秒起的 segment 时间。已有素材和明确剪辑计划可提供 `scene.timeMapping`，例如一个 9 秒单元：
 
 ~~~json
 {
   "schema_version":"PREVIS_TIME_MAPPING_V1",
   "segments":[{
-    "input_id":"A","formal_id":"FORMAL_1","source_version":"MEDIA-1",
+    "input_id":"A","unit_id":"scene-entrance","source_version":"MEDIA-1",
     "source_duration_s":10,"source_start_s":1,"source_end_s":10,
     "segment_start_s":0,"segment_end_s":9,
     "edit_start_s":0,"edit_end_s":9,"playback_rate":1
@@ -36,11 +26,11 @@ transition_context从本段相关、版本适用的原记录抽取plans、review
 }
 ~~~
 
-source 是实际素材坐标，segment 是当前单元段内坐标，edit 是明确拼接计划的成片坐标。战斗映射可使用 unit_id 替代 formal_id，不把制作段制造成正式母稿；全场成片来源另由 fightClock 明确，世界动作经过时间仍未知。源区间、段区间和成片区间长度必须相等，段区间连续覆盖原预算；V1仅接受playback_rate=1，不用数据字段自行授予变速权。不同片段的edit区间可以按明确计划重叠，但这只是坐标映射，不是自动叠化或拼接。映射缺失时外部时钟为UNKNOWN/null，不把段内秒猜成素材或全片秒。
+source 表示素材秒，segment 表示当前单元秒，edit 表示明确拼接计划的成片秒。各区间长度相等，segment 连续覆盖原预算；当前只接受 playback_rate=1。映射不自动变速、叠化或拼接；缺少映射时外部时钟为 UNKNOWN/null。战斗另用 fightClock 保留全场成片偏移，换算到段内时只减一次，不能把成片时间当世界经过时间。
 
-## 提取真实接点证据
+## 提取视频接点
 
-先用npm run render产生当前MP4及成功来源回执，再运行：
+先用 `npm run render` 生成当前 MP4 和成功回执，再运行：
 
 ~~~text
 npm run boundary-pack
@@ -48,7 +38,7 @@ npm run boundary-pack -- --plan boundary-plan.json
 npm run boundary-pack -- --plan boundary-plan.json --plan-only
 ~~~
 
-未给plan时仅选择本工程内部切点。显式plan支持不同工程和素材内部选点，project相对plan文件目录；from.time_s是A最后保留的实际帧，to.time_s是B第一保留帧，不能使用exclusive end当不存在的尾帧。
+未指定计划时仅选择本工程内部切点。跨工程或素材内部选点需显式 `PREVIS_BOUNDARY_PLAN_V1`；project 相对计划文件目录：
 
 ~~~json
 {
@@ -62,18 +52,12 @@ npm run boundary-pack -- --plan boundary-plan.json --plan-only
 }
 ~~~
 
-数字示例为60fps；实际按源fps和所选镜号填写。缺省技术窗口按各端fps选择最接近0.2秒的整数帧（24fps为5帧，60fps为12帧），报告明确记录TECHNICAL_DEFAULT及实际秒数。用户显式指定的窗口必须整帧且不离开所选镜头；工具不自动截短或舍入显式数值。必要时扩大窗口并正常速度播放，不能把固定帧数当动态验收标准。仅实际绑定某条上游连接时才填写transition_id；显式ID必须在两端证明为当前有效记录，否则阻断实际提取，计划模式保留UNVERIFIED_TRANSITION。未填写ID的普通技术切点检查仍可用。
+from 是 A 最后保留的实际帧，to 是 B 第一保留帧，不能用 exclusive end 代替不存在的尾帧。上例按 60fps 填写；所选帧与显式窗口必须落在各自帧网格和镜头范围内，程序不截短或舍入。省略窗口时，按各端 fps 取最接近 0.2 秒的整数帧，最少一帧，标记 TECHNICAL_DEFAULT；这是采样选择，不是验收门槛。
 
-输出review/boundary-report.json与review/boundary-packages/<identity>/，含可独立打开的 index.html（角色/镜号/帧号/三时钟标签与短片）、两端短视频、原始PNG、联系表、三时钟、各 provider 的原身份／版本、源指纹及完整性manifest。短视频不携带音频；audio保持NOT_RUN。--plan-only只有条件计划，不生成或冒充真实帧；缺实际视频时frame_index_basis为PLANNED_SCENE_FRAME_GRID，video时钟标PLANNED，数值仅为拟定帧网格坐标。
+仅当源稿确有登记时填写 transition_id；该 ID 必须在两端的当前逐 ID 连接记录中唯一且有效。未知、重复或过期记录阻断真实提取，plan-only 则保留 UNVERIFIED_TRANSITION。普通硬切可不填 ID。
 
-接点内容身份排除锁、历史、目标等不绘像素元数据，源场景快照保存规范化渲染内容；原始文件取证哈希继续留在原渲染回执。来源不匹配、视频缺失、指定转场过期、文件被改或manifest漏项/重复/错误路径时明确拒绝，保留旧成功report。复用和回执消费都重核全部选定工程、计划和完整包，不只信任manifest自行列出的文件。包可独立查看；重验证live连接仍需原选定工程和计划，冻结材料不证明上游此刻仍有效。
+## 输出与复核
 
-## 联合演示
+输出 `review/boundary-report.json` 和 `review/boundary-packages/<identity>/`，包括独立查看页、两端短片、原始 PNG、联系表、角色/镜号/帧号/时钟、来源身份及完整性 manifest。短片无音频；画面、运动与声音验收分别记录，见[分项回执](scoped-receipts.md)。
 
-~~~text
-node scripts/create_dutyroom_example.mjs outputs/dutyroom-check
-~~~
-
-生成F1（9秒）与F2（12秒）两个独立TEST/DEMO工程。分别npm ci、npm run validate、npm run render；在F1运行npm run boundary-pack -- --plan boundary-plan.json可提取跨段运动。F2接续半开角度及同一请求接点，不重新关门；手腕是否到达该点由当前固定骨长求解和检查决定。后段保留注视与原话轮的计划，未生成声音。
-
-演示有明确测试标识，不等于真实上游授权、完整角色一致性或剧情媒体验收。其他遮挡/甩镜/声音连接按真实母稿实现；缺模糊、音轨或平台控制时在分项回执记录NOT_IMPLEMENTED/NOT_RUN。
+plan-only 只生成计划资料，不生成真实 PNG/短片；没有视频时帧坐标标为 PLANNED_SCENE_FRAME_GRID。实际包复用和 handoff 均重核所选工程、视频、回执、计划、转场依赖及完整文件集，冻结包不能证明原项目此刻仍有效。离线交接见[便携包](portable-bundle.md)。

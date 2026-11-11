@@ -1,37 +1,34 @@
-# 交付文件与下游参考职责
+# 交付文件与参考职责
 
-在已保存工程中运行 npm run handoff。工具复核当前来源、媒体身份、所选接点和实际检查证据，再分别记录交付文件与目标状态；它不渲染新视频、不执行平台提交，也不推进上游覆盖。
+在已保存的制作单元内运行 `npm run handoff`。它复核当前来源、媒体身份、接点和检查证据，写入 `handoff/`；视频渲染、平台提交和源稿修订需另行执行。
 
-## 按来源返回
+## 输出清单
 
-| 文件 | 正式分镜 | 战斗 | 显式演示 |
-|---|---|---|---|
-| manifest.json、checks.json、previs-receipt.json | 来源、媒体状态、检查和目标 | 同左，保留 provider／unit | 演示身份和实际范围 |
-| revision-requests.json | 原正式段／版本定位的返修 | 原 unit／shot／beat／keyframe 定位的返修 | 本地演示问题 |
-| prompts.md | 所选上游母稿逐字副本 | 不生成假母稿 | 不生成 |
-| source-execution.md | 不适用 | intake 执行文本视图，保留来源及转录说明 | 不适用 |
-| adaptation-map.json、transition-map.json | 本地映射与原转场上下文 | 由 fight-map.json 表达 | 不适用 |
-| fight-map.json、source-keyframes.json | 不适用 | 原窗口、时钟与关键状态要求 | 不适用 |
-| reference-attachments.md | 实际资产、参考职责和限制 | 同左 | 不套用源提示词 |
-| demo-notes.md | 不适用 | 不适用 | 明确没有真实上游身份 |
+| 文件 | 内容 |
+|---|---|
+| manifest.json | 来源身份、规格、视频状态、映射、检查和交付目标 |
+| checks.json、previs-receipt.json | 分项结果、来源及媒体哈希、目标状态和未实现项 |
+| revision-requests.json | 带原单元／镜头定位及证据的返修请求 |
+| shots.csv | 当前镜头 ID、起止、时长和 beat 字段 |
+| reference-attachments.md | 通用或战斗来源、人物资产绑定及参考职责 |
+| prompts.md | 仅通用分镜：封存原稿的正文副本 |
+| adaptation-map.json、transition-map.json | 仅通用分镜：逐镜映射及本地转场备注；未提供源转场时 source 为 null |
+| source-execution.md、fight-map.json | 仅战斗：执行来源文本、原动作窗口与时钟、新视觉层来源要求 |
+| source-keyframes.json | 仅战斗：所选来源关键帧记录 |
+| demo-notes.md | 无来源绑定的显式演示说明 |
 
-完整可编辑项目还包括 scene.json、运行时、来源证据及原目录关系。工程外来源用[便携包](portable-bundle.md)一起交接，不能只压缩单元子目录。
+`handoff/source-keyframes.json` 是来源帧记录；原状态捕获读取的是项目根目录的 `PREVIS_SOURCE_KEYFRAMES_V1` 计划，两者用途不同，见[状态图说明](boundary-previs.md)。
 
-renders/render-receipt.json 必须对应当前保存输入和视频；只存在 MP4、缺成功回执或哈希不匹配时 videoStatus 为 unverified-or-stale。旧审片和失败尝试保留历史，不能据其声称当前视频已修好。
+单元完整交接还需 scene.json、运行时、来源证据和引用关系。工程外依赖用[便携包](portable-bundle.md)携带；handoff 里的来源路径不等于已复制素材。
 
-## 批注和人工审阅
+## 视频与完成状态
 
-npm run feedback 独立导出 handoff/feedback.md、feedback.json 和带 PNG 的 feedback-packages/<identity>/。交付整个包；批注状态和来源证据不塞进视频模型提示词。OPEN、RESOLVED、VERIFIED 分别表示待处理、已处理、附证据验收，过期图不能作为当前验收。
+`verified-render-current-inputs` 表示当前视频及成功回执与已保存输入匹配；只有 MP4、回执缺失或哈希不符时为 `unverified-or-stale`，尚无视频时为 `not-rendered`。文件已交付和目标已完成分别记录；没有实际证据的声音、语义或最终模型检查不会自动通过。
 
-新增 adapter-review.json 使用 PREVIS_REVIEW_V2，记录每个检查的 status、实际 scope、项目内证据及 SHA-256。媒体检查绑定当前四项身份，接点检查另绑定 boundary_identity；实际提交与最终媒体还要保留真实平台记录。旧 V1 只按原范围兼容，不用于新的分项结论。结构与例子见[分项回执](scoped-receipts.md)。
+人工批注通过 `npm run feedback` 独立导出，交付时携带整个 `feedback-packages/<identity>/`，包括 PNG 和完整性清单。批注状态不写进视频模型提示词。分项审阅及目标门槛见[分项回执](scoped-receipts.md)。
 
-## 参考承担什么
+## 参考职责
 
-- 人物、场景、道具图承担真实身份、服装、材质和形状，绑定用户实际素材。
-- 预演承担已实现的机位、相对空间、动作时刻和剪辑意图；固定骨长也不证明完整关节限位、支撑或受力。
-- 下游可自然化步态、布料与细节；占位人物外观、关节形状、辅助线、标签和 Studio 控件不作为成片身份依据。
-- 原镜首尾的方向、持物、伤损、门体和持续术法需要逐项检查。状态图、MP4 邻近运动和声音分别记录，不能互相替代。
+人物、场景和道具素材承担身份、服装、材质及形状；代理预演承担已实现的机位、相对空间、时刻与剪辑意图。占位外观、辅助线、标签和 Studio 控件不作为成片身份依据。素材路径本身不会让当前代理渲染器自动呈现真实造型。
 
-参考视频不能保证生成模型逐像素或逐镜保留。是否支持视频参考、实际时长／张数／尺寸限制由目标平台的当前能力决定；本工具没有执行的平台或最终模型工作保留 NOT_RUN／UNKNOWN。
-
-如需切片或拼接观看版，记录原单元、实际帧窗口及成片偏移，并保留原视频和回执。新切片／观看版是派生参考，不因产生文件而成为新的上游正式段。
+原镜首尾的方向、持物、伤损、门体和持续术法需逐项检查。静态状态图、MP4 邻近运动和声音不能互相替代；固定骨长也不证明完整关节限位、支撑或受力。派生切片／观看版应保留原单元、实际帧窗口与偏移，不能替代原视频及回执。

@@ -1,86 +1,67 @@
 # HyperFrames 分镜与战斗预演
 
-当前版本 **0.6.1**。将已交付的分镜或战斗执行稿制作成可编辑的 Three.js 三维预演，再用 HyperFrames 导出参考视频。技能入口为 [SKILL.md](SKILL.md)。
+版本 **0.7.0**。将已有分镜或战斗执行稿落实为可编辑的 Three.js 三维预演，通过 HyperFrames 导出参考视频。技能入口为 [SKILL.md](SKILL.md)。
 
-支持两个上游，保留各自的原 ID、时间、资产和来源证据：
+| 输入 | 接入方式 |
+|---|---|
+| 通用分镜、导演稿或镜头文字 | [通用接入](references/upstream-adapter.md)：明确单元、镜头、段内时码和原稿；自由文字由代理阅读后整理 |
+| xianxia-fight-director 战斗交付 | [战斗接入](references/fight-adapter.md)：当前工作 JSON 1.3，或六件套的人工转录 |
 
-| 来源 | 支持输入 | 接入指南 |
-|---|---|---|
-| script-to-storyboard-prompts | 有效正式段、同版预算、资产与首尾状态；状态 1.8/V3 文字、1.9/V4 JSON | [分镜接入](references/upstream-adapter.md) |
-| xianxia-fight-director | 自然语言六件套，或工作 JSON 1.1／1.2 的原制作段 | [战斗接入](references/fight-adapter.md) |
+工具只读来源，写入自己的场景、媒体和回执。当前不兼容旧来源契约。战斗生成器只自动建立 `PARTIAL_LAYOUT_ONLY` 空间布局，完整动作与摄影仍需按原稿实现。
 
-本工具读取上游，写自己的预演工程与回执。上游剧情、制作覆盖、游标和完成状态仍由上游管理。
+## 预览演示
 
-## 开始使用
-
-验证环境：Node.js 22.22.2、Python 3、HyperFrames 0.9.10、Three.js 0.187.0。依赖由模板 package-lock.json 锁定；Python 接收工具只使用标准库。实际视频探测及接点提取需要 FFmpeg／ffprobe。
-
-显式试用独立演示：
+需要 Node.js。模板已包含本地浏览器库，可以直接预览：
 
 ~~~text
 node scripts/create_project.mjs work/demo --demo
 cd work/demo
-npm ci
-npm run prepare-libs
 npm run validate
 npm run studio
 ~~~
 
-打开终端输出的本地地址。Studio 占用当前终端；导出命令在同一工程的另一个终端执行。
+打开终端输出的地址；Windows 也可双击生成工程中的 `启动预演.cmd`。工程服务占用当前终端，其他命令另开终端运行。
 
-正式分镜先使用下列入口创建未绑定工程，再按[接入指南](references/upstream-adapter.md)整理实际来源、资产和镜头映射：
+## 制作工程
+
+在仓库根目录选择入口：
 
 ~~~text
 node scripts/create_project.mjs work/my-previs
+node scripts/create_fight_example.mjs work/my-fight --project <实际战斗JSON>
 ~~~
 
-已有战斗 JSON 可使用：
+第一个命令创建待绑定工程，随后按通用接入指南封存来源、实现 `scene.json` 和逐镜映射，再运行 `npm run bind-upstream`。第二个命令为战斗的每个原制作段生成独立工程，自动封存、绑定并校验布局。
 
-~~~text
-node scripts/create_fight_example.mjs work/my-fight --project <真实project.json>
-~~~
-
-战斗生成器在新目录中为每个原制作段建立独立工程。四个已匹配源签名的案例有专用代理轨道；其他输入明确输出 PARTIAL_LAYOUT_ONLY，后续需按实际执行稿实现动作。仓库不内置上游全文。
-
-## 检查与交付
-
-在已绑定、已实现的制作单元目录执行：
+以下命令在生成的单元工程内执行：
 
 ~~~text
 npm run validate
-npm run lint
 npm run spatial-check
+npm ci
 npm run render
 npm run handoff
 ~~~
 
-战斗工程另运行 npm run fight-check。有 source-keyframes.json 时运行 npm run state-capture；boundary-plan.json 含连接且所有端点已渲染时，再运行 npm run boundary-pack。完整命令与次序见[战斗接入](references/fight-adapter.md)和[接点说明](references/boundary-previs.md)。
+战斗工程另运行 `npm run fight-check`；需要原状态图或真实视频接点时，按[运行指南](references/runtime.md)执行 `state-capture`、`boundary-pack`。Python 3 用于来源封存，仅使用标准库；FFmpeg／ffprobe 用于视频检查和接点提取。导出依赖由工程的 `package-lock.json` 锁定：HyperFrames 0.9.10、Three.js 0.187.0。
 
-模板默认 **60 fps**，输出尺寸沿用源画幅并使用偶数像素。总时长和切点必须落在帧网格；不能为迎合帧率舍入上游预算。原关键状态可以位于非整帧时刻，通过独立 PNG 捕获。60fps 是离线编码规格，不是实时交互帧率保证。
+## 能力与边界
 
-Studio 支持机位、FOV、路径点、模板预览、锁、目标级撤销、PNG 批注和检查定位。导出读取已保存数据；画面批注、处理状态与附证据验收分别记录。
+Studio 支持机位、FOV、人物路径、运镜模板、锁、局部撤销、PNG 批注与检查定位。当前画面使用代理几何；资产参考文件参与来源检查，不会自动加载成角色模型或贴图。手臂采用固定骨长双段代理 IK，够不到的目标保留真实间隙并报警。
 
-## 当前能力和限制
+默认 60 fps，时长和切点须准确落在帧网格。原状态 PNG 可以位于镜尾或非整帧时刻，与 MP4 抽帧分开记录。来源校验、代理检查和实际语义／画面／声音验收各有范围，详见[交付与检查](references/handoff.md)。
 
-上臂／前臂采用固定骨长双段代理 IK。请求目标与实际手腕分别保留；够不到的目标产生真实间隙和 ARM_TARGET_UNREACHABLE，不通过拉长手臂消除间隙。
+## 仓库导航
 
-0.6.1 冻结回归为 **527 项通过，0 失败、0 跳过**，含真实浏览器和独立验证。四类战斗的 12 段视频共 **137 秒、8,220 帧**，另有 51 张原时刻状态 PNG、33 组实际视频接点。详细范围见[验证索引](evals/README.md)。
-
-这些样例的动作轨道仍存在不可达目标等限制：当前 12 段 FIGHT_PREVIS 均保持 BLOCKED，共保留 131 组代理告警。软件测试通过不表示动作接触或整场语义验收完成；部分动作仍需蹲身、俯身等姿态排演。完整关节限位、腿部支撑、受力、声音口型、原角色身份和最终视频模型生成未被本包自动验收。
-
-## 文档导航
-
-| 需要做的事 | 文档 |
+| 位置／事项 | 用途 |
 |---|---|
-| 使用技能接收任务 | [SKILL.md](SKILL.md) |
-| 接收正式分镜／战斗 | [分镜接入](references/upstream-adapter.md) · [战斗接入](references/fight-adapter.md) |
-| 编写场景、相机、动作和手臂目标 | [场景契约](references/scene-contract.md) · [镜头复用](references/camera-patterns.md) |
-| 编辑、锁、撤销、批注和空间检查 | [编辑与审片](references/editor-review.md) |
-| 运行、导出、指纹和状态捕获 | [运行时](references/runtime.md) |
-| 处理时间映射和真实视频接点 | [接点与时钟](references/boundary-previs.md) |
-| 返回文件、验收目标和返修 | [交付清单](references/handoff.md) · [分项回执](references/scoped-receipts.md) |
-| 移动工程或离线交接 | [便携包](references/portable-bundle.md) |
-| 维护目录、检查和清理 | [维护指南](references/maintenance.md) |
-| 查验证结论和历史修复 | [验证索引](evals/README.md) |
+| `scripts/` | 仓库级创建、封存及回归入口 |
+| `assets/starter/` | 生成工程的完整模板；包含工程级 npm 命令、本地库和许可证 |
+| `assets/examples/` | 值班室演示和内部战斗数值测试资源 |
+| `tests/`、[验证记录](evals/README.md) | 可执行回归、合成夹具与已有验证范围 |
+| [场景契约](references/scene-contract.md)、[运镜模板](references/camera-patterns.md) | 场景、动作、机位和时间数据 |
+| [编辑与审片](references/editor-review.md)、[接点与时钟](references/boundary-previs.md) | 保存、批注、检查和视频接点 |
+| [分项回执](references/scoped-receipts.md)、[便携包](references/portable-bundle.md) | 目标状态、证据、返修与移动交接 |
+| [维护指南](references/maintenance.md) | 目录职责、测试、版本和本地文件管理 |
 
-仓库中的 tests/ 是可执行契约回归，入口为 node scripts/check_project.mjs。默认运行会明确跳过未启用的真实浏览器项；启用方法见维护指南。历史记录中的 outputs/ 链接属于本机证据，Git 仓库不包含视频、缓存、依赖或上游正文。
+`work/`、`outputs/` 存放本地工程与证据，不属于模板分发内容。

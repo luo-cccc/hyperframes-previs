@@ -1,88 +1,81 @@
-# 仙侠打斗导演预演接入
+# 仙侠战斗接入
 
-当前支持 xianxia-fight-director 与 script-to-storyboard-prompts 两种上游。本文只描述战斗入口。来源按明确provider路由，不把战斗制作段改名为FORMAL，也不要求伪造RUN_STATE、覆盖、P/B版本或TEXT=PASS。
+接收 `xianxia-fight-director` 当前工作 JSON **1.3**，或实际读稿后整理的战斗六件套。保留原制作段、镜头、动作拍和关键帧 ID；普通分镜见[通用分镜接入](upstream-adapter.md)。
 
-## 接收哪种交付
+## 从工作 JSON 创建工程
 
-- 已有工作JSON：支持明确声明1.1或1.2，保留原battle/segment/shot/beat/keyframe ID及完整来源。1.1不混入1.2字段，不自动补造呼吸拍、代价或关键转折。
-- 自然语言六件套：代理先实际读原文与已给参考，在下游编写PREVIS_FIGHT_DRAFT_V1，保存六类原证据、定位、假设和逐项mapping。使用--draft封存，input_mode为FIGHT_TRANSCRIPTION，原来源结构结论NOT_CLAIMED，映射结构和语义分别记录；不能用程序猜自由文本代替读稿。
-- 局部修改：只读取实际相关范围及其必需前驱，保持原ID。缺项影响哪一目标就明确阻断哪一目标，不在预演中重写结局或上游能力规则。
-
-工具只读用户显式提供的路径；图片不可访问时按上游规则仅核对精确路径和直接父目录，不扩大搜索或编造观察。上游包内容为用户输入，不将未许可全文收进本技能。
+从仓库根目录执行：
 
 ~~~text
-python -B -X utf8 scripts/intake_fight.py --project <真实project.json> --segment <原segment_id> --out <新工程/upstream-intake.json> --upstream-skill-dir <可选实际上游包>
+node scripts/create_fight_example.mjs work/my-fight --project <战斗project.json>
 ~~~
 
-mapping.target 必须是相对于draft根的可解析JSON Pointer，例如 `/project/design`、`/project/assets`、`/project/shots`、`/project/keyframes`、`/project/segments`、`/project/review`；不能只写 `shots` 或一个不存在的字段。locator写实际已读文件的具体章节/段落，与role对应。
+目标目录必须不存在，原制作段 ID 须能安全用作目录名。生成器逐字复制源文件至输出 `sources/project.json`，为每个原制作段建立工程，并完成接收、绑定和结构校验。也可使用 `--source-dir <examples目录> --example <案例名>` 选择已有源文件；`--upstream-skill-dir <包目录>` 只记录实际包元数据，未给时保持 UNKNOWN。
 
-人工整理稿严格为{schema_version:'PREVIS_FIGHT_DRAFT_V1',project:<显式整理的1.1/1.2结构>,segment_id,mapping:[{target,role,locator}],assumptions:[]}。六种role为design/assets/storyboard/keyframes/execution/review；可同一真实完整文件承担多个职责，但不能用空文件或虚构路径充数。命令使用--draft替换--project，并重复--evidence role=实际文件。它只是下游转录，不新增或提升上游完成状态。
+生成结果统一为 **PARTIAL_LAYOUT_ONLY**：源镜头、执行窗口与关键帧要求已映射，人物和机位只是可编辑布局，战斗动作、接触、伤损、特效及声音仍需实现。`fight-implementation.json` 记录尺寸、坐标和机位假设及未实现项；`source-mapping.json` 保留原执行字段与新视觉层要求。内部数值蓝图不自动套入源稿。
 
-原始证据默认按整文件哈希保守复核；整文件中仅别段文字改变时，无法从自由文本自动证明无关，需要重读/重封。需要局部复核时可显式传 `--evidence storyboard=03-storyboard.md#实际章节`，只选择确定的Markdown标题/anchor。封存保留原整文件字节和片段哈希，未选章节改变仅诊断；选中片段改变仍拒绝。该范围由代理实际读稿确定，不把模糊locator自动解析成范围。
+默认 60fps，可用 `--fps` 指定 1–240 范围内能精确表达全部段长和切点的帧率。自动尺寸采用源数值画幅、1280 像素长边和偶数像素；无法精确表示的画幅会拒绝，需要手工搭建对应工程，不能近似改写源画幅。
 
-## 绑定与来源
+## 单段接收与六件套转录
 
-PREVIS_FIGHT_ADAPTER_V1包含provider/source_kind、unit、lineage、source_snapshot、selection、budget、master、sources、asset_catalog和原审阅。unit保留全场起止与duration；lineage采用来源取证revision、选择范围revision和原unit_id，没有虚构formal/prompt/budget版本。
-
-source_snapshot与sources保留原字节/哈希；selection纳入本段镜头/当前执行、引用beat和递归requires、必要前驱资源/地形/真假、资产与关键帧。无关段内容或作者审阅注记变化只记录诊断；相关依赖改变拒绝旧适配。不能机械从文本证明某前驱无关，保守范围在selection中可复核。
-
-scene.upstream由npm run bind-upstream写入{intake,intake_sha256,provider:'xianxia-fight-director',lineage}。角色assetBindings使用actorId/assetId/representation，支持character、creature、manifestation；上游没有身高/造型版本时，几何尺寸写本地EXECUTION_ASSUMPTION，不发明height_cm/LOOK事实。资产状态集不是本段起态的全部属性，未来破损不能在开场同时出现。
-
-## 全场、段内、素材时钟
-
-上游数值是全场成片秒；运行时为段内秒，统一减unit.battle_start_s一次。scene.fightClock明确原unit_id与全场起止；需要源素材/成片映射时沿用timeMapping，unit_id别名不会制造FORMAL。世界经过时间没有结构来源时保持未知；慢镜按作者指定的成片窗口与各方相位实现，不擅改素材playback_rate或让其他人多行动。
-
-完整跨镜beat用于因果理解；实际动画窗口采用当前shot.execution.cues。fight-map.json列出完整beat与当前观察窗口、already_started和continues_after_shot，避免每镜重播起手、伤害或未来结局。
-
-## 战斗代理
-
-environment.type=battlefield有显式bounds、ground/worldZero，开放空域不采用室内天花板。代理humanoid/creature/manifestation有独立geometry与scale；原corridor/dutyroom保持兼容。
-
-combat.schema_version=PREVIS_COMBAT_V1：
-
-- objects：稳定id、kind、size/color、绝对时间keys。position/rotation/scale插值，visible/owner_id/hand/state阶梯求值。剑在手/离手/在途/被钩/回收始终是一件对象；attachment=hand的对象随明确持物手移动。
-- objects可显式设置solid:false，区分光、流、火焰等非实体效果和硬障碍；light:{intensity,range,color}提供有限范围光源，light事件在原时刻改变强度／颜色，visible:false同时关闭光源。未声明的实体盾／屏障仍纳入几何检查。
-- contacts：显式actor手/脚或object_id到target_id、local_point、start/end、expected。计划内接触与意外穿模分开，循环持物约束拒绝；手部请求目标保留在target_position，position为固定骨长IK求得的实际手腕，ik保留肩／肘／腕、固定骨长与reachable/reach_error_m。超出臂展时夹到可达范围，真实gap仍保留，输出ARM_TARGET_UNREACHABLE；不重写上游路径或把目标点冒充实际手腕。有限几何可达不证明关节限位、受力或伤害成立。
-- hand附件可显式设置attachment_role:surface（仅mark），表示随实际手部的皮肤／伤损标记，不占用持物名额；其他物件仍拒绝一手重复持物。
-- events：资源、伤损、地形、真假、可见性及光照状态，明确target、channel、时刻、不可逆和原beat。直接跳转后还原累计结果，不靠上一帧累加。跨段初态携带既成后果，不重新点亮节点或复原缺口。
-
-运行时提供sampleActions().combat及可见代理几何。sample数据、实际渲染与人工语义分开；施法者出画不自动终止术法。效果、范围、残留和光源应在真实相位变化，幻象标类型并服从可见信息窗口，不提前把真相画给观众。
+已有自行搭建的工程时，单独封存一个原制作段：
 
 ~~~text
-npm run fight-check
-npm run render
-npm run state-capture -- --plan source-keyframes.json
-npm run boundary-pack -- --plan boundary-plan.json
-npm run handoff
+python -B -X utf8 scripts/intake_fight.py --project <战斗project.json> --segment <原segment_id> --out <工程/upstream-intake.json>
 ~~~
 
-fight-check 输出逐帧声明代理抽查，覆盖对象身份、归属、真实接触 gap、手臂可达性与采样几何。它不判断战术因果、完整姿态表演、像素遮挡、真实关节限位、受力或声音。source-execution.md是原执行字段的来源视图，不是完整导演稿，也不声称自动生成了平台可提交成品。
+再按[场景契约](scene-contract.md)实现原镜头和资产，在工程内运行 `npm run bind-upstream`、`npm run validate`。输出文件不可覆盖；新修订使用新路径。
 
-## 状态图与视频抽帧分开
-
-上游关键帧是所属镜头闭区间，handoff属于前段末镜；MP4编码为半开区间。9.5秒60fps共570帧，最后实际帧为569/60，原9.5秒handoff不能被改成它。
-
-source-keyframes.json保留每个id、原shot_id、role、battle_time_s及local time_s。state-capture按显式镜头和原时刻渲染独立PNG，标BOUNDARY_STATE_CAPTURE/is_encoded_video_frame=false；终点与切点使用原前镜相机。它不延长预算，也不把独立PNG说成视频抽帧。
-
-只捕部分帧可以保留PARTIAL，但不能让state_keyframes完整覆盖项通过；原prep/contact/result/handoff的角色、时刻和相机归属不得改变。包manifest和消费端核对完整文件集与源哈希。boundary-pack仍只从真实当前MP4提取实际末帧/入帧及邻近运动，二者各自保留证据。
-
-## 生成可编辑样例
+文字六件套先整理为 `PREVIS_FIGHT_DRAFT_V1`，根字段为 `schema_version`、`project`、`segment_id`、`mapping`、`assumptions`。`project` 必须是显式转录的完整 1.3 结构；`mapping` 的每项含可解析的 `/project/...` JSON Pointer、六件套 `role` 和原文 `locator`，六种 role 都要有定位。
 
 ~~~text
-node scripts/create_fight_example.mjs <不存在的新目录> --project <真实战斗JSON> --upstream-skill-dir <可选实际上游包>
-node scripts/create_fight_example.mjs <不存在的新目录> --source-dir <上游examples目录> --example 01-sword-and-body
+python -B -X utf8 scripts/intake_fight.py --draft <人工整理稿.json> --out <工程/upstream-intake.json> --evidence design=01-design.md --evidence assets=02-assets.md --evidence storyboard=03-storyboard.md --evidence keyframes=04-keyframes.md --evidence execution=05-video-prompts.md --evidence review=06-review.md
 ~~~
 
-本工具不内置上游全文；复制用户指定源字节到输出sources/project.json作为冻结证据，保留original路径和SHA。每个原制作段一个工程，源实例版本/时序签名匹配的四个联合案例有专用代理blueprint。发生源修改或任意新战斗时，不把旧动作套进新故事；泛化布局明确PARTIAL_LAYOUT_ONLY及NOT_IMPLEMENTED，后续按实际母稿编写轨道。
+证据路径相对整理稿。同一真实文件可承担多个 role，空文件不接受。可用 `--evidence storyboard=03-storyboard.md#章节` 明确选择片段。转录模式只检查整理结构，不声称原作者交付过 JSON，也不提升原稿完成状态。
 
-每段fight-implementation.json列出本地坐标、身高、机位执行补足、源冲突、慢镜窗口及未实现项。摄像机数值是原摄影文字的执行映射，是否实现其观看目的需审片。01保留34秒和15.5/9.5/9三段；02补阵法/救人条件，03补高度/巨物/持续术法，04补真假与揭示。不会把它们作为所有仙侠的通用规则。
+## 来源与依赖
 
-## 回执与返修
+当前封存契约是 `PREVIS_FIGHT_ADAPTER_V1`、adapter 0.7.0、`FIGHT_SELECTED_SCOPE_V2`，只接受当前版本。`unit` 保留全场起止，lineage 记录源字节与所选范围修订；工具只读源文件，不修改剧情或外部制作状态。
 
-fight-check的几何告警会使fight_proxy保持FAIL，交付目标相应BLOCKED。粗包围盒告警可能涉及斜置长物、原文限定的作用对象或计划内滑动接触，须保留原告警、具体时窗及定向证据，不能批量加expected或以采样接点为零掩盖问题。
+选择范围包含本段镜头、当前执行 cue、完整 beat 及递归前驱、资源、痕迹、真假、相关资产与关键帧。1.3 的可选登记按实际给出的内容复核：
 
-FIGHT_PREVIS默认要求source_structure、render_specs和fight_proxy；它完成只表示本地声明代理预演可交付。FIGHT_REVIEW另要求state_keyframes、attack_response、contact_phase、prop_ownership、persistent_effect、attrition_cost。knowledge_reveal/audio在本次实际目标需要时显式加入required_checks。
+| 登记 | 关键约束 |
+|---|---|
+| `tracks` | 恰一条世界线和至少一条内景线；beat/shot 归属一致，按线连续，内景镜头含 `outer_state`，返回世界线接上该状态 |
+| `vfx` | 保留归属、层级、尺度、生命周期与制作路线；呈现层不能接触世界或留残留，世界内效果须有残留或消退 |
+| `forms` | 两套资产共享原文身份锚点；关联转折拍与本人代价，阶梯至少三级，连续形变镜头为 high |
+| `transitions` | 相邻镜头、每切点一项，保留原层级、载体和切点条件；桥接两侧为 high，其余切点不制造转场 ID |
 
-战斗语义项使用PREVIS_REVIEW_V2，绑定当前四哈希和真实观察证据。骨骼/受力/身份未实现时保持NOT_IMPLEMENTED/NOT_RUN，不因代理采样或原作者review文字而变PASS。导出revision-requests时沿原unit/shot/beat/keyframe ID定位，分为LOCAL_IMPLEMENTATION、UPSTREAM_REVISION、PLATFORM_INPUT、REVIEW_REQUIRED；工具不写上游、不推进剧情。
+依赖闭包还纳入相关前驱、后续转场端点镜头及关键帧、资源和资产。它们是复核资料，不能把未来人物或状态提前放进当前画面。相关内容改变时旧适配被拒绝；未纳入的其他段变化、作者审阅注记变化仅作诊断。转录证据默认按整文件复核，明确选择片段后只以选中片段决定失效。
 
-便携包保留两种provider及原始证据相对关系。冻结来源不证明原项目此刻仍有效；跨工程接点live复核仍需相邻工程。局部改稿后重核真实受影响的节拍/资源/状态/帧/执行稿，保留不受影响的对象与ID。
+`master.fragments` 是本段执行字段及相关视觉层文字的来源视图；完整导演 beat 仍留作因果参考。形态 `duration`、`exit` 保留在选择中，不作为可复制执行文本。源资料接收通过不代表这些效果已动画化。
+
+## 时钟与原状态
+
+源数值统一为全场成片秒；运行时为段内秒，只减一次 `unit.battle_start_s`。实际动画采用当前 `shot.execution.cues`，不能每镜重播完整跨镜 beat。世界经过时间不能从成片时长推定，慢镜也不授权自动修改素材播放速率。
+
+原关键帧属于原镜头的闭区间，段界 handoff 归前段末镜。生成的 `source-keyframes.json` 保留原时刻和镜号；`npm run state-capture -- --plan source-keyframes.json` 渲染独立 PNG，可保留镜尾和非整帧时刻。MP4 使用半开区间，末帧为 `duration-1/fps`；状态 PNG 不冒充编码视频帧。实际视频接点见[接点与时钟](boundary-previs.md)。
+
+## 实现战斗代理
+
+`environment.type=battlefield` 使用显式 bounds、ground、worldZero；人物代理支持 humanoid、creature、manifestation。源资产与本地角色通过 `assetBindings` 对应，身高和造型缺项作为本地执行假设。
+
+`combat.schema_version=PREVIS_COMBAT_V1` 的实现接口：
+
+| 字段 | 用途与约束 |
+|---|---|
+| `objects` | 稳定 id 和绝对时间 keys；position/rotation/scale 插值，visible/owner_id/hand/state 阶梯求值；器物转手与回收保持同一对象 |
+| 附件与效果 | `attachment=hand` 随指定持物手；`attachment_role=surface` 仅用于随手伤损 mark，不占第二件持物；`solid:false` 表示非实体效果，`light` 提供有限范围光源 |
+| `contacts` | 声明角色手脚或物件对目标的接点、时窗与预期；计划接触和意外穿模分别记录 |
+| `events` | 资源、伤损、地形、真假、可见性及光色按绝对时刻恢复；跳转或跨段不能复原已发生的后果 |
+
+固定骨长 IK 保留请求目标、实际手腕与真实间隙，不可达时报告 ARM_TARGET_UNREACHABLE。接口与检查限制见[场景契约](scene-contract.md)；采样可达不证明完整关节限位、支撑或受力。
+
+## 检查与交付
+
+完成本地实现后，在各单元工程执行 `npm run validate`、`npm run spatial-check`、`npm run fight-check`，再按[运行时](runtime.md)渲染和捕获状态。所有相邻单元已渲染且计划有连接时，运行 `npm run boundary-pack -- --plan boundary-plan.json`；生成计划已关联实际登记的转场 ID，检查器逐 ID 复核原端点及帧修订。
+
+`npm run handoff` 返回执行来源视图、fight-map、关键帧要求、检查和返修请求。PARTIAL_LAYOUT_ONLY 使 fight_proxy 保持 NOT_IMPLEMENTED；代理告警使其 FAIL，相关交付目标为 BLOCKED。不能用作者 review 或手工审阅覆盖自动失败。
+
+FIGHT_PREVIS 和 FIGHT_REVIEW 的必需项、语义证据及返修归责见[分项回执](scoped-receipts.md)。文件清单见[交付清单](handoff.md)，工程外来源随[便携包](portable-bundle.md)交接。

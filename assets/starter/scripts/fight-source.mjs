@@ -3,10 +3,12 @@ import {sectionText} from './source-fragments.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import {ADAPTER_VERSION} from './adapter-version.mjs';
+import {LAYER_FIELDS,LAYER_PROFILE,validateFightLayers,selectFightLayers,fightLayerFragments} from './fight-layers.mjs';
 
 export const FIGHT_PROVIDER='xianxia-fight-director';
 export const FIGHT_SCHEMA='PREVIS_FIGHT_ADAPTER_V1';
-const PROFILE='FIGHT_SELECTED_SCOPE_V1', EPS=1e-6;
+const PROFILE=LAYER_PROFILE, EPS=1e-6;
 const ACTORS=new Set(['character','creature','manifestation']);
 const KINDS=new Set([...ACTORS,'scene','prop','formation']);
 const EVIDENCE_ROLES=new Set(['design','assets','storyboard','keyframes','execution','review']);
@@ -81,10 +83,8 @@ export function parseFightJson(bytes,label='JSON'){
 }
 
 export function validateFightProject(project){
-  fields(project,'schema_version title duration_sec aspect_ratio style assumptions constraints design assets scene beats shots segments keyframes'.split(' '),['cost','knowledge','review']);
-  demand(['1.1','1.2'].includes(project.schema_version),'schema_version: only declared 1.1/1.2 is supported');
-  const modern=project.schema_version==='1.2';
-  demand(modern||(!Object.hasOwn(project,'cost')&&!Object.hasOwn(project,'knowledge')),'1.1 cannot contain 1.2 cost/knowledge fields');
+  fields(project,'schema_version title duration_sec aspect_ratio style assumptions constraints design assets scene beats shots segments keyframes'.split(' '),['cost','knowledge','review',...LAYER_FIELDS]);
+  demand(project.schema_version==='1.3','schema_version: only declared 1.3 is supported; supply current upstream content');
   for(const key of ['title','aspect_ratio','style'])text(project[key],key);
   number(project.duration_sec,'duration_sec');demand(project.duration_sec>0,'duration_sec: must be positive');
   for(const key of ['assumptions','constraints'])strings(project[key],key);
@@ -100,8 +100,8 @@ export function validateFightProject(project){
       for(const row of review.media_observations){fields(row,['source','kind','observation','limitations'],[],'review.media_observations');Object.values(row).forEach(v=>text(v,'media observation'));demand(['image','video','audio'].includes(row.kind),'review.media_observations.kind: unsupported');}
     }
   }
-  const shapes={assets:['id kind name anchors states image_prompt','reference'],beats:['id start end actors action response result requires',modern?'marks':''],shots:['id start end beat_ids asset_ids opening_state camera effects sound end_state execution'+(modern?' light risk':''),modern?'fallback':''],segments:['id shot_ids opening_state closing_state prompt_context',''],keyframes:['id shot_id time_sec asset_ids state prompt'+(modern?' role':''),'']};
-  if(modern){shapes.cost=['id owner item from_beat irreversible consequence',''];if(Object.hasOwn(project,'knowledge'))shapes.knowledge=['id holder belief truth from_beat cue','resolved_by'];}
+  const shapes={assets:['id kind name anchors states image_prompt','reference'],beats:['id start end actors action response result requires','marks track'],shots:['id start end beat_ids asset_ids opening_state camera effects sound end_state execution'+' light risk','fallback track outer_state'],segments:['id shot_ids opening_state closing_state prompt_context',''],keyframes:['id shot_id time_sec asset_ids state prompt'+' role','']};
+  {shapes.cost=['id owner item from_beat irreversible consequence',''];if(Object.hasOwn(project,'knowledge'))shapes.knowledge=['id holder belief truth from_beat cue','resolved_by'];}
   const ids=new Set(),maps={};
   for(const [group,[required,optional]] of Object.entries(shapes)){
     demand(Array.isArray(project[group])&&project[group].length>0,group+': expected nonempty array');maps[group]=new Map();
@@ -111,7 +111,7 @@ export function validateFightProject(project){
       ids.add(row.id);maps[group].set(row.id,row);
     }
   }
-  fields(project.scene,['asset_id','geography',...(modern?['attrition']:[])],[],'scene');text(project.scene.geography,'scene.geography');
+  fields(project.scene,['asset_id','geography','attrition'],[],'scene');text(project.scene.geography,'scene.geography');
   const assets=maps.assets,beats=maps.beats,shots=maps.shots;
   function refs(values,table,label,allowEmpty=false,actors=false){
     strings(values,label,!allowEmpty,true);for(const id of values){demand(table.has(id),label+': unknown reference '+id);if(actors)demand(ACTORS.has(table.get(id).kind),label+': expected acting asset');}
@@ -135,9 +135,9 @@ export function validateFightProject(project){
   for(const shot of project.shots){
     interval(shot,'shots.'+shot.id);demand(near(shot.start,cursor),'shots: gap, overlap or order mismatch');cursor=shot.end;
     refs(shot.asset_ids,assets,'shots.asset_ids');refs(shot.beat_ids,beats,'shots.beat_ids');
-    for(const key of ['opening_state','end_state','camera','effects','sound',...(modern?['light']:[])])text(shot[key],'shots.'+key);
-    if(modern){demand(['low','high'].includes(shot.risk),'shots.risk: unsupported');demand(Object.hasOwn(shot,'fallback')===(shot.risk==='high'),'shots.fallback: required only for high risk');if(Object.hasOwn(shot,'fallback'))copyable.push(shot.fallback);}
-    const execution=shot.execution,execKeys=['opening_state','end_state','camera','effects','sound',...(modern?['light']:[])];
+    for(const key of ['opening_state','end_state','camera','effects','sound','light'])text(shot[key],'shots.'+key);
+    {demand(['low','high'].includes(shot.risk),'shots.risk: unsupported');demand(Object.hasOwn(shot,'fallback')===(shot.risk==='high'),'shots.fallback: required only for high risk');if(Object.hasOwn(shot,'fallback'))copyable.push(shot.fallback);}
+    const execution=shot.execution,execKeys=['opening_state','end_state','camera','effects','sound','light'];
     fields(execution,[...execKeys,'cues'],[],'shots.execution');for(const key of execKeys){text(execution[key],'execution.'+key);copyable.push(execution[key]);}
     demand(Array.isArray(execution.cues)&&execution.cues.length>0,'execution.cues: expected nonempty array');let edge=shot.start;
     for(const cue of execution.cues){
@@ -145,7 +145,7 @@ export function validateFightProject(project){
       demand(cue.start>=shot.start-EPS&&cue.start<cue.end&&cue.end<=shot.end+EPS,'execution.cues: outside owning shot');demand(near(cue.start,edge),'execution.cues: not continuous');edge=cue.end;copyable.push(cue.text);
     }
     demand(near(edge,shot.end),'execution.cues: missing shot end');
-    if(previous){demand(previous.end_state===shot.opening_state,'shots: world states are not literally continuous');demand(previous.execution.end_state===execution.opening_state,'shots: execution states are not literally continuous');}previous=shot;
+    if(previous&&!project.tracks){demand(previous.end_state===shot.opening_state,'shots: world states are not literally continuous');demand(previous.execution.end_state===execution.opening_state,'shots: execution states are not literally continuous');}previous=shot;
     for(const id of shot.beat_ids){const beat=beats.get(id),start=Math.max(beat.start,shot.start),end=Math.min(beat.end,shot.end);demand(start<end,'shots.beat_ids: no positive overlap');coverage.get(id).push([start,end]);}
   }
   demand(near(cursor,project.duration_sec),'shots: battle timeline is incomplete');
@@ -157,10 +157,10 @@ export function validateFightProject(project){
   for(const frame of project.keyframes){
     refs([frame.shot_id],shots,'keyframes.shot_id');refs(frame.asset_ids,assets,'keyframes.asset_ids');const shot=shots.get(frame.shot_id);
     demand(frame.asset_ids.every(id=>shot.asset_ids.includes(id)),'keyframes.asset_ids: not registered in owning shot');number(frame.time_sec,'keyframes.time_sec');demand(frame.time_sec>=shot.start-EPS&&frame.time_sec<=shot.end+EPS,'keyframes.time_sec: outside closed owning-shot interval');
-    text(frame.state,'keyframes.state');text(frame.prompt,'keyframes.prompt');if(modern)demand(['single','prep','contact','result','handoff'].includes(frame.role),'keyframes.role: unsupported');frameCounts.set(frame.shot_id,frameCounts.get(frame.shot_id)+1);copyable.push(frame.prompt);
+    text(frame.state,'keyframes.state');text(frame.prompt,'keyframes.prompt');demand(['single','prep','contact','result','handoff'].includes(frame.role),'keyframes.role: unsupported');frameCounts.set(frame.shot_id,frameCounts.get(frame.shot_id)+1);copyable.push(frame.prompt);
   }
   demand([...frameCounts.values()].every(Boolean),'keyframes: every shot needs a frame');
-  if(modern){
+  {
     demand(Array.isArray(project.scene.attrition)&&project.scene.attrition.length>0,'scene.attrition: expected nonempty array');
     for(const row of project.scene.attrition){fields(row,['id','mark','from_beat','consequence'],[],'scene.attrition');text(row.id,'attrition.id');demand(/^[A-Za-z][A-Za-z0-9_-]*$/.test(row.id)&&!ids.has(row.id),'attrition.id: invalid or repeated global ID');ids.add(row.id);text(row.mark,'attrition.mark');text(row.consequence,'attrition.consequence');refs([row.from_beat],beats,'attrition.from_beat');}
     for(const group of ['cost','knowledge'])for(const row of project[group]||[]){
@@ -171,15 +171,17 @@ export function validateFightProject(project){
     }
     const marked=Object.fromEntries(['pivotal','breath','adaptation'].map(mark=>[mark,project.beats.filter(beat=>beat.marks?.includes(mark))]));
     demand(Object.values(marked).every(rows=>rows.length>0),'beats.marks: pivotal, breath and adaptation required');
-    for(const beat of marked.pivotal){const times=['prep','contact','result'].map(role=>{const picked=project.keyframes.filter(frame=>frame.role===role&&frame.time_sec>=beat.start-EPS&&frame.time_sec<=beat.end+EPS).map(frame=>frame.time_sec);demand(picked.length>0,'keyframes: pivotal missing '+role);return Math.min(...picked);});demand(times[0]<times[1]&&times[1]<times[2],'keyframes: pivotal role times must increase');}
-    for(const beat of marked.breath)demand(!beat.marks.includes('pivotal')&&!marked.pivotal.some(other=>beat.start<other.end-EPS&&other.start<beat.end-EPS),'beats: breath overlaps pivotal');
+    for(const beat of marked.pivotal){const times=['prep','contact','result'].map(role=>{const picked=project.keyframes.filter(frame=>frame.role===role&&shots.get(frame.shot_id).track===beat.track&&frame.time_sec>=beat.start-EPS&&frame.time_sec<=beat.end+EPS).map(frame=>frame.time_sec);demand(picked.length>0,'keyframes: pivotal missing '+role);return [Math.min(...picked),Math.max(...picked)];});demand(times[0][1]<times[1][0]&&times[1][1]<times[2][0],'keyframes: pivotal role times must increase');}
+    for(const beat of marked.breath)demand(!beat.marks.includes('pivotal')&&!marked.pivotal.some(other=>other.track===beat.track&&beat.start<other.end-EPS&&other.start<beat.end-EPS),'beats: breath overlaps pivotal');
     demand(marked.adaptation.every(beat=>beat.requires.length>0),'beats: adaptation missing completed prerequisite');
-    for(const segment of project.segments.slice(0,-1)){const last=shots.get(segment.shot_ids.at(-1)),picked=project.keyframes.filter(frame=>frame.role==='handoff'&&near(frame.time_sec,last.end));demand(picked.length>0&&picked.every(frame=>frame.shot_id===last.id),'keyframes: handoff must belong to preceding segment final shot at closed endpoint');}
+    for(const segment of project.segments.slice(0,-1)){const last=shots.get(segment.shot_ids.at(-1)),picked=project.keyframes.filter(frame=>frame.role==='handoff'&&near(frame.time_sec,last.end));demand(picked.some(frame=>frame.shot_id===last.id),'keyframes: handoff must belong to preceding segment final shot at closed endpoint');}
     demand(project.shots.length===1||new Set(project.shots.map(shot=>shot.light)).size>=2,'shots.light: differing multi-shot light registration required');
     const earliest=Math.min(...marked.pivotal.map(beat=>beat.start));demand(project.scene.attrition.some(row=>beats.get(row.from_beat).end<=earliest+EPS),'scene.attrition: no mark before pivotal beat');
     demand(project.cost.some(row=>row.irreversible)&&new Set(project.cost.map(row=>row.owner)).size>=2,'cost: irreversible expenditure and two owners required');
   }
-  for(const value of copyable){text(value,'copyable text');demand(!/[0-9]+(?:\.[0-9]+)?\s*秒|[0-9]+(?:[:：][0-9]{1,2}){1,2}(?:\.[0-9]+)?/.test(value),'copyable text: numeric timecode belongs in cue fields');demand(![...ids].some(id=>id.length>=4&&value.includes(id)),'copyable text: internal registered ID leaked');}
+  copyable.push(...validateFightLayers(project,ids,{fields,text,strings,demand,EPS}));
+  for(const row of project.assets)copyable.push(row.name,...row.anchors,...Object.values(row.reference||{}));
+  for(const value of copyable){text(value,'copyable text');demand(!/[0-9]+(?:\.[0-9]+)?\s*秒|[0-9]+(?::[0-9]{2}){1,2}(?:\.[0-9]+)?/.test(value.normalize('NFKC')),'copyable text: numeric timecode belongs in cue fields');demand(![...ids].some(id=>new RegExp('(?<![A-Za-z0-9_-])'+id+'(?![A-Za-z0-9_-])').test(value)),'copyable text: internal registered ID leaked');}
   return project;
 }
 
@@ -202,7 +204,7 @@ export function selectFightProject(project,segmentId){
   for(const frame of project.keyframes){const owner=shotsById.get(frame.shot_id);if(segment.shot_ids.includes(frame.shot_id)||owner.beat_ids.some(id=>beatIds.has(id)&&frame.time_sec>=beatsById.get(id).start-EPS&&frame.time_sec<=beatsById.get(id).end+EPS))frameIds.add(frame.id);}
   const keyframes=project.keyframes.filter(frame=>frameIds.has(frame.id)),assetIds=new Set([project.scene.asset_id]);
   shots.forEach(shot=>shot.asset_ids.forEach(id=>assetIds.add(id)));beatIds.forEach(id=>beatsById.get(id).actors.forEach(actor=>assetIds.add(actor)));keyframes.forEach(frame=>frame.asset_ids.forEach(id=>assetIds.add(id)));cost.forEach(row=>assetIds.add(row.owner));knowledge.forEach(row=>assetIds.add(row.holder));
-  return {schema_version:PROFILE,source_schema_version:project.schema_version,battle:Object.fromEntries(['title','aspect_ratio','style','assumptions','constraints','design'].map(key=>[key,project[key]])),segment,shots,beats:project.beats.filter(beat=>beatIds.has(beat.id)),assets:project.assets.filter(asset=>assetIds.has(asset.id)),keyframes,scene:Object.fromEntries(Object.entries(project.scene).filter(([key])=>key!=='attrition')),cost,attrition,knowledge,states:{world:{opening_state:shots[0].opening_state,end_state:shots.at(-1).end_state},execution:{opening_state:shots[0].execution.opening_state,end_state:shots.at(-1).execution.end_state},segment:{opening_state:segment.opening_state,closing_state:segment.closing_state}},transition_context:{schema_version:'PREVIS_FIGHT_BOUNDARY_CONTEXT_V1',unit_id:segmentId,boundaries}};
+  return selectFightLayers(project,{schema_version:PROFILE,source_schema_version:project.schema_version,battle:Object.fromEntries(['title','aspect_ratio','style','assumptions','constraints','design'].map(key=>[key,project[key]])),segment,shots,beats:project.beats.filter(beat=>beatIds.has(beat.id)),assets:project.assets.filter(asset=>assetIds.has(asset.id)),keyframes,scene:Object.fromEntries(Object.entries(project.scene).filter(([key])=>key!=='attrition')),cost,attrition,knowledge,states:{world:{opening_state:shots[0].opening_state,end_state:shots.at(-1).end_state},execution:{opening_state:shots[0].execution.opening_state,end_state:shots.at(-1).execution.end_state},segment:{opening_state:segment.opening_state,closing_state:segment.closing_state}},transition_context:{schema_version:'PREVIS_FIGHT_BOUNDARY_CONTEXT_V1',unit_id:segmentId,boundaries}});
 }
 function mappedBudget(selection){
   const start=selection.shots[0].start,end=selection.shots.at(-1).end;
@@ -211,6 +213,7 @@ function mappedBudget(selection){
 function executionMaster(selection){
   const fragments=[{pointer:'/segments/@'+selection.segment.id+'/prompt_context',text:selection.segment.prompt_context}];
   for(const shot of selection.shots){const prefix='/shots/@'+shot.id+'/execution/',execution=shot.execution;fragments.push({pointer:prefix+'opening_state',text:execution.opening_state});execution.cues.forEach((cue,index)=>fragments.push({pointer:prefix+'cues/'+index+'/text',text:cue.text}));for(const key of ['camera','effects','light','sound','end_state'])if(Object.hasOwn(execution,key))fragments.push({pointer:prefix+key,text:execution[key]});}
+  fragments.push(...fightLayerFragments(selection));
   const content=fragments.map(row=>row.text).join('\n\n');return {text:content,text_sha256:hash(content),origin:'SELECTED_EXECUTION_FIELDS',fragments};
 }
 function assetCatalog(selection){return {assets:selection.assets,actors:selection.assets.filter(row=>ACTORS.has(row.kind)),...Object.fromEntries([['characters','character'],['creatures','creature'],['manifestations','manifestation'],['props','prop'],['formations','formation'],['scenes','scene']].map(([name,kind])=>[name,selection.assets.filter(row=>row.kind===kind)]))};}
@@ -245,7 +248,7 @@ export async function checkFightUpstream(root,scene){
   const binding=scene?.upstream;demand(binding&&typeof binding.intake==='string'&&binding.intake.trim(),'scene.upstream.intake is required','FIGHT_BINDING_MISMATCH');
   const file=path.resolve(root,binding.intake),bytes=await readFile(file),intakeSha256=hash(bytes),packet=parseFightJson(bytes,'fight intake');
   demand(binding.intake_sha256===intakeSha256,'intake bytes changed; explicitly bind a new packet revision','FIGHT_BINDING_MISMATCH');
-  demand(packet.schema_version===FIGHT_SCHEMA&&packet.adapter_version==='0.6.0'&&packet.provider===FIGHT_PROVIDER&&packet.source_kind===FIGHT_PROVIDER,'packet schema/provider/adapter version unsupported','FIGHT_PACKET_INVALID');
+  demand(packet.schema_version===FIGHT_SCHEMA&&packet.adapter_version===ADAPTER_VERSION&&packet.provider===FIGHT_PROVIDER&&packet.source_kind===FIGHT_PROVIDER,'packet schema/provider/adapter version unsupported','FIGHT_PACKET_INVALID');
   demand(binding.provider===FIGHT_PROVIDER&&(!binding.schema_version||binding.schema_version===FIGHT_SCHEMA)&&isObject(binding.lineage)&&same(binding.lineage,packet.lineage),'binding must match provider and complete original lineage','FIGHT_BINDING_MISMATCH');
   demand(['FIGHT_JSON','FIGHT_TRANSCRIPTION'].includes(packet.input_mode)&&packet.validation_profile===PROFILE,'unsupported input mode or scoped profile','FIGHT_PACKET_INVALID');
   demand(packet.semantic_status==='needs_review'&&packet.semantic_review==='NOT_RUN'&&packet.upstream_writes===false&&packet.mapped_structural_status==='pass','intake cannot claim semantic/media acceptance','FIGHT_PACKET_INVALID');
@@ -291,6 +294,15 @@ export async function checkFightUpstream(root,scene){
   demand(currentSelection!==null,'live project was not checked','FIGHT_PACKET_INVALID');if(manual)demand(evidenceRoles.size===EVIDENCE_ROLES.size,'manual intake requires all six original evidence files','FIGHT_PACKET_INVALID');
   checkScene(scene,packet,diagnostics);
   for(const entry of frozen)demand((await readFile(entry.file)).equals(entry.raw),'source changed during validation; retry a stable snapshot','FIGHT_SOURCE_CHANGED');
-  const context=currentSelection.transition_context,declared=context.boundaries.length>0;
-  return {packet,file,intakeSha256,structuralOnly:true,lineage:packet.lineage,transitions:{status:declared?'CURRENT':'NOT_DECLARED',expected_sha256:declared?fightSelectionSha256(expected.transition_context):null,current_sha256:declared?fightSelectionSha256(context):null,context,reasons:[]},diagnostics};
+  const context=currentSelection.transition_context;
+  const endpointContext=(selection,row)=>{
+    const shots=[...selection.shots,...selection.layer_dependencies.shots],byId=new Map(shots.map(shot=>[shot.id,shot]));
+    return {transition:row,endpoints:[row.from_shot,row.to_shot].map(id=>({shot_id:id,source_schema_version:selection.source_schema_version,shot:byId.get(id),keyframes:selection.keyframes.filter(frame=>frame.shot_id===id)}))};
+  };
+  const connections=expected.transitions.map(row=>{
+    const current=currentSelection.transitions.find(item=>item.id===row.id),before=endpointContext(expected,row),after=endpointContext(currentSelection,current),expectedSha=fightSelectionSha256(before),currentSha=fightSelectionSha256(after);
+    return {id:row.id,transition_id:row.id,status:expectedSha===currentSha?'CURRENT':'STALE',scope:'FIGHT_TRANSITION_AND_ORIGINAL_ENDPOINT_SHOTS_AND_KEYFRAMES',expected_sha256:expectedSha,current_sha256:currentSha,endpoints:before.endpoints.map(endpoint=>({shot_id:endpoint.shot_id,source_schema_version:endpoint.source_schema_version,revision:'sha256:'+fightSelectionSha256({shot:endpoint.shot,keyframes:endpoint.keyframes})}))};
+  });
+  const declared=context.boundaries.length>0||connections.length>0;
+  return {packet,file,intakeSha256,structuralOnly:true,lineage:packet.lineage,transitions:{status:declared?'CURRENT':'NOT_DECLARED',expected_sha256:declared?fightSelectionSha256({context:expected.transition_context,connections}):null,current_sha256:declared?fightSelectionSha256({context,connections}):null,connections,context,reasons:[]},diagnostics};
 }

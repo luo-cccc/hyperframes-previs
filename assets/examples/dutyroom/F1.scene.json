@@ -11,8 +11,8 @@
     "upstream_authorization": "NOT_ESTABLISHED",
     "binding": "NONE",
     "story_reference": "Upstream 0.4.1 archived test fixture: 值班室的灯·夜, F1/P2 and F2/P1. This geometry is a demonstration, not an authorized mother-script binding.",
-    "formal_id": "FORMAL_1",
-    "source_version": "P2",
+    "unit_id": "DEMO_UNIT_1",
+    "source_version": "DEMO_SOURCE_V2",
     "units": "metres; Y up; +X east, -Z north / corridor; left=-local X, right=+local X; actor forward=-local Z",
     "implementation_fill": "Primitive proxies, chosen metric coordinates and explanatory arms. Fixed feet, explicit head/gaze, palm anchor and key hand only; no anatomical IK, audio synthesis, lip sync or final-model acceptance.",
     "time_note": "Independent segment export. Edit offsets 0 and 9 are a declared demonstration plan, not an assembled movie. The exact logical end at t=duration is not an extra export frame."
@@ -279,8 +279,8 @@
     "segments": [
       {
         "input_id": "DEMO-FORMAL_1-P2",
-        "formal_id": "FORMAL_1",
-        "source_version": "P2",
+        "unit_id": "DEMO_UNIT_1",
+        "source_version": "DEMO_SOURCE_V2",
         "source_duration_s": 9,
         "source_start_s": 0,
         "source_end_s": 9,

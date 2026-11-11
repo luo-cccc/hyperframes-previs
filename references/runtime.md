@@ -1,57 +1,46 @@
-# 运行、导出与媒体身份
+# 本地预览、检查与导出
 
-当前验证基线为 Node.js 22.22.2、HyperFrames 0.9.10、Three.js 0.187.0，依赖版本以模板 package-lock.json 为准。升级前核对实际安装版本与接口；本包的 60fps 指离线导出规格。
+模板随附 `lib/` 中的 Three.js 浏览器模块与许可。预览、场景校验和代理空间检查使用 Node.js，不要求先安装渲染依赖；`npm run studio` 默认在本机 4173 端口启动，端口占用时设置 `PREVIS_PORT` 后重启。
 
-## 初始化与绝对时间
+HyperFrames 导出、静态检查和截图需要先在项目内运行 `npm ci`。包锁固定 HyperFrames 0.9.10、Three.js 0.187.0；`npm run prepare-libs` 用于按已安装的 Three.js 重新准备本地库。缺浏览器时运行 `npx hyperframes browser ensure`。视频规格探测需要 ffprobe，接点提取还需要 ffmpeg。
 
-- index.html 根元素声明 data-composition-id、data-start=0、data-duration、data-width、data-height、data-fps。改输出规格后运行 npm run validate 同步入口元数据。
-- 纯 Three.js 入口设置空 window.__timelines 和 data-no-timeline，画面由 hf-seek 的 event.detail.time 驱动同一 renderAt(t)。没有伪造 GSAP 时间线。
-- window.__hf.buildReady.previs 在场景、资源和首帧完成后 resolve。异步逐帧工作在监听函数内同步登记 event.detail.waitUntil(promise)。
-- WebGL 使用 preserveDrawingBuffer；纹理和外部模型加载纳入 readiness。lib/ 提供本地 Three.js、OrbitControls 和许可证，预览不依赖 CDN。
-- studio.html 嵌入干净入口。播放计时器只请求相同的绝对时间采样；自由观察和未保存预览不改变正式机位。
+## 项目命令
 
-固定骨长和目标／实际手腕的区别见[场景契约](scene-contract.md)。资源、伤损、真假及光色均按 t 恢复，前后跳转和独立状态捕获不能留下未来状态。
+以下命令均在生成的制作单元目录执行：
 
-## 命令职责
-
-在制作单元目录执行：
-
-| 命令 | 产物／范围 |
+| 命令 | 实际作用 |
 |---|---|
-| npm ci；npm run prepare-libs | 安装锁定依赖，复制本地浏览器库 |
-| npm run validate | 数据、来源、绑定和入口规格 |
-| npm run studio | 启动本地编辑审片服务 |
-| npm run lint | 锁定版本 HyperFrames 静态检查 |
-| npm run spatial-check | review/spatial-report.json，声明范围内的采样代理告警 |
-| npm run fight-check | review/fight-report.json，已实现战斗对象、真实接触间隙及可达性 |
-| npm run snapshot | 用运行时渲染首尾、切点邻近及镜中图；不是从 MP4 提取的证据 |
-| npm run state-capture -- --plan source-keyframes.json | 原镜与原时刻的独立状态 PNG 及完整性报告 |
-| npm run render | 当前保存输入的 renders/previs.mp4、成功回执和独立尝试记录 |
-| npm run boundary-pack -- --plan boundary-plan.json | 当前 MP4 的真实接点帧与短窗口；计划非空且端点已渲染才提取 |
-| npm run feedback；npm run handoff | 实际批注包、分项检查、来源副本与返修请求 |
+| `npm run bind-upstream` | 校验来源与映射，写入 intake 哈希和来源身份 |
+| `npm run validate` | 校验 scene、来源及绑定，同步 index.html 输出元数据 |
+| `npm run studio` | 启动本地编辑审片服务；Ctrl+C 停止 |
+| `npm run lint` | 运行 HyperFrames 静态检查 |
+| `npm run spatial-check` | 写入 review/spatial-report.json，检查声明的代理几何 |
+| `npm run fight-check` | 写入 review/fight-report.json，抽查已实现战斗代理 |
+| `npm run snapshot` | 从运行时截取首尾、切点邻近及镜中图，输出到 review/ |
+| `npm run state-capture` | 按根目录 source-keyframes.json 捕获原时刻状态图 |
+| `npm run render` | 导出 renders/previs.mp4、成功回执和本次尝试记录 |
+| `npm run boundary-pack` | 从当前 MP4 提取内部切点；跨工程连接需显式计划 |
+| `npm run feedback` | 导出批注数据与带 PNG 的反馈包 |
+| `npm run handoff` | 复核并写入交付文件、分项检查和目标状态 |
 
-首次缺浏览器时运行 npx hyperframes browser ensure。宿主 GPU 不可用时可尝试 npm run render -- --no-browser-gpu，再核对实际画面。导出默认单 worker，减少 WebGL 上下文争用；重新导出需锁定 npm 依赖，不能只保留 lib/ 就声称具备导出环境。
+snapshot 和 state-capture 直接渲染场景；boundary-pack 提取实际视频。三者的用途及时间边界见[接点与时钟](boundary-previs.md)。handoff 不会渲染视频或执行平台提交。
 
-## 视频发布与过期
+## 确定采样
 
-正式导出使用 npm run render 包装器。它在独立暂存文件中生成视频，复核源未变化，并在 ffprobe 可用时检查尺寸、fps、时长与帧数，然后发布视频及 renders/render-receipt.json。失败保留上次成功视频；renders/render-attempt.json 单独记录本次尝试。缺 ffprobe 时 media_metrics_status=NOT_RUN。
+`index.html` 的 `data-*` 属性声明输出规格；`src/previs.js` 在 `hf-seek` 时按绝对时间调用 `renderAt(t)`。场景、动作、资源与灯光都从当前 t 求值，任意跳转应得到相同状态。`window.__hf.buildReady.previs` 在首帧完成后 resolve；扩展异步素材加载时也应纳入就绪条件。
 
-渲染身份为 PREVIS_RENDER_CONTENT_V2：scene_sha256 是规范化渲染内容，scene_file_sha256 保留原文件取证。四项审阅关联是 scene_sha256、intake_sha256、render_inputs_sha256、video_sha256。
+Studio 嵌入同一干净入口。自由观察、选框和路径线用于编辑；导出读取已保存数据。当前渲染器生成代理几何，不会因填写图片路径自动加载真实角色模型或贴图。
 
-指纹追踪入口、规范化 scene.json、包锁和 src／lib／assets／models／textures／fonts／media／audio／shaders，以及资产 appearanceReference。额外本地依赖写入 scene.renderDependencies；远程素材先本地化。editLocks、editorHistory、deliveryGoal、reviewRouting、transitionMap 不绘像素，单独修改它们不会使相同媒体无故过期。
+## 导出与媒体身份
 
-模型、轨道、脚本、素材或相关来源变化会使旧媒体待重导。直接调用底层 CLI 不会获得本包装器的来源关联回执；不能手改哈希把它提升为当前成功渲染。
+`npm run render` 先校验、锁定输入，再用单 worker 输出临时视频；复核来源与渲染输入未变后，发布视频及 `renders/render-receipt.json`。失败保留上次成功视频，本次失败写入 `renders/render-attempt.json`。
 
-## 跳转、切点和截图
+可传 `--no-browser-gpu`、`--browser-gpu` 或 `--quality draft|looks|delivery|standard|high`。例如 `npm run render -- --no-browser-gpu`；更改运行方式后仍需核对实际画面。
 
-普通 seek 使用 [start,end)，切点检查 cut-1/fps、cut、cut+1/fps，实际 MP4 末帧为 duration-1/fps。原状态捕获使用显式原 shot_id 的闭区间，可位于镜尾或非整帧时刻；它的 provenance=BOUNDARY_STATE_CAPTURE、is_encoded_video_frame=false。
+ffprobe 可用时检查尺寸、fps、时长和帧数；缺失时 `media_metrics_status=NOT_RUN`，不能据此让规格检查通过。60fps 是模板的离线导出规格，不是实时播放性能承诺。
 
-window.PREVIS 提供 ready、seek、inspect、setView、机位预览／保存、captureStateAt 等接口。captureStateAt 拒绝未保存机位，临时采用指定原机位绘图，并恢复时间、视图、选择和光色。前后跳转与捕获恢复的图像一致性属于运行时验证，不等于人物表演或声音验收。
+`PREVIS_RENDER_CONTENT_V2` 用四项哈希关联当前媒体：`scene_sha256`、`intake_sha256`、`render_inputs_sha256`、`video_sha256`。`scene_file_sha256` 另保留原文件取证；scene_sha256 排除锁、编辑历史、交付目标、返修路由及转场实现备注。
 
-state-capture 不覆盖已存在的包目录；重复导出使用新的 --out，或核对并复用仍有效的原报告。
+渲染指纹跟踪入口、场景、包锁、src/lib 及模型、纹理、媒体等资源目录。项目外本地依赖通过 `scene.renderDependencies` 或资产的 `appearanceReference` 显式声明；远程素材先本地化。实质机位、轨道、代码或素材变化后，应重导相关媒体并更新证据。只修改批注或目标状态不会改变相同画面的身份。
 
-实际视频接点见[接点与时钟](boundary-previs.md)，交付状态和人工证据见[分项回执](scoped-receipts.md)。
-
-## 接口参考
-
-优先查项目安装包内的 hyperframes/dist/skills/hyperframes/references/ 和对应 CLI --help。外部入口：[HyperFrames 源码](https://github.com/heygen-com/hyperframes)、[运行时指南](https://github.com/heygen-com/hyperframes/blob/main/skills/hyperframes/references/runtimes.md)、[三维确定性说明](https://github.com/heygen-com/hyperframes/blob/main/skills/hyperframes/references/types/3d.md)、[Three.js 文档](https://threejs.org/docs/)。这些链接不表示本次已验证其主分支的新接口。
+文件与验收规则见[交付清单](handoff.md)和[分项回执](scoped-receipts.md)。

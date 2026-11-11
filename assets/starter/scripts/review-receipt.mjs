@@ -40,10 +40,7 @@ export function identityMatches(review,identity){
 export async function scopedReview(root,review,identity,{fresh=false,transitionsCurrent=true,boundaryCurrent=false,boundaryIdentity=null,goal=null}={}){
   const result={schema_version:'PREVIS_SCOPED_REVIEW_V1',status:'NOT_RUN',checks:{},findings:[],diagnostics:[],provenance:'USER_RECORDED; file integrity and source identity do not prove the recorded judgment.'};
   if(!review)return result;
-  if(review.schema_version==='PREVIS_REVIEW_V1'){
-    result.status='LEGACY';result.diagnostics.push('Legacy review is retained for its original semantic scope; it does not establish new boundary/audio/platform checks.');return result;
-  }
-  need(review.schema_version==='PREVIS_REVIEW_V2','unsupported review schema; retain old records and create an explicit revision.');
+  need(review.schema_version==='PREVIS_REVIEW_V2','unsupported review schema; this release requires PREVIS_REVIEW_V2.');
   need(review.checks&&typeof review.checks==='object'&&!Array.isArray(review.checks),'checks must be an object.');
   need(Array.isArray(review.findings||[]),'findings must be an array.');
   const sourceMatches=['scene_sha256','intake_sha256','render_inputs_sha256'].every(key=>Object.hasOwn(review,key)&&review[key]===identity[key]);

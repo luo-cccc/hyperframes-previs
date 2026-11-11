@@ -5,16 +5,9 @@ import {aerialAvatar} from './aerial-avatar.mjs';
 import {illusionAndBreath} from './illusion-breath.mjs';
 import {actor,object,battlefield,point as P,clone,clean,cutActor,cutCombat} from './track-utils.mjs';
 export const BLUEPRINTS=Object.freeze({'01-sword-and-body':swordAndBody,'02-formation-rescue':formationRescue,'03-aerial-avatar':aerialAvatar,'04-illusion-and-breath':illusionAndBreath});
-export function selectBlueprint(source){
- const markers={'xf01_scene_sluice':'01-sword-and-body','xf02_scene_court':'02-formation-rescue','xf03_scene_gorge':'03-aerial-avatar','xf04_scene_library':'04-illusion-and-breath'};
- const matches=source.assets.map(asset=>markers[asset.id]).filter(Boolean);
- if(matches.length>1)throw new Error('BLUEPRINT_SOURCE_MISMATCH: multiple example identity markers; choose an explicit local implementation.');
- const blueprint=matches.length?BLUEPRINTS[matches[0]](source):genericBlueprint(source);
- if(blueprint.expectedShots){
-  if(blueprint.expectedShots.length!==source.shots.length||source.shots.some((shot,i)=>shot.start!==blueprint.expectedShots[i][0]||shot.end!==blueprint.expectedShots[i][1]))throw new Error('BLUEPRINT_SOURCE_MISMATCH: original example shot schedule changed. Re-author its numeric proxy; no budget or cue is retimed.');
- }
- return blueprint;
-}
+// Numeric BLUEPRINTS remain internal runtime demonstrations. They have no
+// current-source acceptance evidence and are never selected by source IDs.
+export function selectBlueprint(source){return genericBlueprint(source);}
 function genericBlueprint(source){
  const colors=['#6f9cba','#bb8466','#b8b578','#7ca68e'];
  const originals=source.assets.filter(asset=>['character','creature'].includes(asset.kind));
@@ -27,7 +20,7 @@ export function segmentWindows(source){
  return source.segments.map(segment=>{const selected=segment.shot_ids.map(id=>{if(!shots.has(id))throw new Error('Unknown shot '+id);return shots.get(id)});return {id:segment.id,segment,shots:selected,start:selected[0].start,end:selected.at(-1).end,duration:clean(selected.at(-1).end-selected[0].start)}});
 }
 export function projectScene(source,blueprint,unit,{fps,sourceSha,width,height}){
- const selected=selectFightProject(source,unit.id),allowedAssets=new Set(selected.assets.map(asset=>asset.id)),allowedActors=new Set(selected.assets.filter(asset=>['character','creature','manifestation'].includes(asset.kind)).map(asset=>asset.id)),sourceAssets=new Set(source.assets.map(asset=>asset.id)),actors=blueprint.actors.filter(actor=>allowedActors.has(actor.id));
+ const selected=selectFightProject(source,unit.id),allowedAssets=new Set(unit.shots.flatMap(shot=>shot.asset_ids)),allowedActors=new Set(selected.assets.filter(asset=>allowedAssets.has(asset.id)&&['character','creature','manifestation'].includes(asset.kind)).map(asset=>asset.id)),sourceAssets=new Set(source.assets.map(asset=>asset.id)),actors=blueprint.actors.filter(actor=>allowedActors.has(actor.id));
  const combat=cutCombat(blueprint.combat,unit.start,unit.end,fps);combat.objects=combat.objects.filter(item=>(!sourceAssets.has(item.id)||allowedAssets.has(item.id))&&item.keys.every(key=>key.owner_id===null||allowedActors.has(key.owner_id)));const objectIds=new Set(combat.objects.map(item=>item.id));combat.contacts=combat.contacts.filter(c=>objectIds.has(c.target_id)&&(c.actor_id?allowedActors.has(c.actor_id):objectIds.has(c.object_id)));combat.events=combat.events.filter(e=>allowedActors.has(e.target_id)||objectIds.has(e.target_id));
  const scene={schemaVersion:1,id:('fight-'+unit.id).toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,''),title:source.title+' / '+unit.id,duration:unit.duration,width,height,fps,environment:clone(blueprint.environment),door:null,actors:actors.map(actor=>({...cutActor(actor,unit.start,unit.end,fps),role:source.assets.find(asset=>asset.id===actor.id)?.name??actor.id})),shots:unit.shots.map(shot=>{
   const camera=blueprint.cameras[source.shots.indexOf(shot)]??blueprint.cameras[0];

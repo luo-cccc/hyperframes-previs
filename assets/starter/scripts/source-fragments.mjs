@@ -1,4 +1,4 @@
-// Existing adapter Markdown fragment semantics, shared by the fight evidence reader.
+// Explicit Markdown fragment semantics shared by text evidence readers.
 export function sectionText(text,fragment){
   const anchors=[...text.matchAll(/<a\s+id=(["'])(.*?)\1\s*>\s*<\/a>/gi)];
   const incomingTrim=(start,end)=>{for(const anchor of anchors){if(anchor.index>=start&&anchor.index+anchor[0].length<=end&&!text.slice(anchor.index+anchor[0].length,end).trim())return anchor.index}return end};

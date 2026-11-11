@@ -10,5 +10,6 @@ export async function sourceContext(root,upstream){
     if(path.dirname(folder)===folder)break;
   }
   if(upstream.packet.provider==='xianxia-fight-director'||upstream.packet.schema_version==='PREVIS_FIGHT_ADAPTER_V1')return {mode:upstream.packet.input_mode==='FIGHT_JSON'?'FIGHT_SOURCE_SNAPSHOT':'FIGHT_TRANSCRIPTION',upstream_authority:false,notice:'Selected fight-director source records are verified read-only. A source snapshot does not establish live workflow authority or semantic/media acceptance.'};
-  return {mode:upstream.packet.input_mode==='STATE_JSON'?'LIVE_REFERENCES':'MANUAL_EVIDENCE',upstream_authority:upstream.packet.input_mode==='STATE_JSON',notice:'Adapter remains read-only; only the upstream skill may commit authoritative workflow changes.'};
+  if(upstream.packet.schema_version==='PREVIS_STORYBOARD_ADAPTER_V1')return {mode:upstream.packet.input_mode==='STORYBOARD_JSON'?'STORYBOARD_SOURCE_SNAPSHOT':'STORYBOARD_TRANSCRIPTION',upstream_authority:false,notice:'Original storyboard text, IDs, timing and explicitly supplied records are checked read-only. A normalized source/draft is not an authoritative workflow state or semantic/media acceptance.'};
+  throw new Error('Source context: unsupported intake contract.');
 }

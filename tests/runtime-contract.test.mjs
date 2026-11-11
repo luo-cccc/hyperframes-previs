@@ -140,8 +140,8 @@ test('declared clipping and cross-project edit overlap preserve distinct source 
   assert.equal(a.duration,9);assert.equal(b.duration,12);
 });
 const pieces=()=>({schema_version:'PREVIS_TIME_MAPPING_V1',segments:[
-  {input_id:'clip-A',formal_id:'FORMAL_2',source_version:'P1',source_duration_s:10,source_start_s:2,source_end_s:6,segment_start_s:0,segment_end_s:4,edit_start_s:5,edit_end_s:9,playback_rate:1},
-  {input_id:'clip-B',formal_id:'FORMAL_2',source_version:'P1',source_duration_s:20,source_start_s:7,source_end_s:15,segment_start_s:4,segment_end_s:12,edit_start_s:8.5,edit_end_s:16.5,playback_rate:1}
+  {input_id:'clip-A',unit_id:'source-unit-two',source_version:'source-v1',source_duration_s:10,source_start_s:2,source_end_s:6,segment_start_s:0,segment_end_s:4,edit_start_s:5,edit_end_s:9,playback_rate:1},
+  {input_id:'clip-B',unit_id:'source-unit-two',source_version:'source-v1',source_duration_s:20,source_start_s:7,source_end_s:15,segment_start_s:4,segment_end_s:12,edit_start_s:8.5,edit_end_s:16.5,playback_rate:1}
 ]});
 test('piecewise lookup selects the next half-open interval and keeps declared edit overlap',()=>{
   const s=clone(f2);s.timeMapping=pieces();assert.deepEqual(validateTimeMapping(s),[]);

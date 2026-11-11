@@ -67,10 +67,8 @@ export async function createHandoff(root,{publish=true}={}){
     ...reviewed.checks
   };
   const goal=evaluateDeliveryGoal(goalInput||scene.deliveryGoal||(fight?{id:'fight-previs-'+sourceInfo.unit_id,target:'FIGHT_PREVIS'}:undefined),checks);
-  const lineage={...sourceInfo,project_id:upstream?.packet.project_id||scene.id,formal_id:upstream?.packet.formal_id||null,prompt_version:upstream?.packet.prompt_version||null,budget_version:upstream?.packet.budget_version||null,...identity};
+  const lineage={...sourceInfo,...identity};
   const revisions=revisionRequests(reviewed.findings,goal,lineage);
-  const legacyEvidence=typeof review?.evidence==='string'?review.evidence.trim():Array.isArray(review?.evidence)&&review.evidence.some(value=>typeof value==='string'&&value.trim());
-  const legacyCurrent=Boolean(fresh&&review?.schema_version==='PREVIS_REVIEW_V1'&&['CHECKED','PASS','FAIL'].includes(review.status)&&legacyEvidence&&Object.entries(identity).every(([key,value])=>review[key]===value));
   const manifest={
     schemaVersion:1,adapter_version:ADAPTER_VERSION,render_identity:'PREVIS_RENDER_CONTENT_V2',...identity,delivery_goal_configuration_sha256:sha256(JSON.stringify(goalInput||scene.deliveryGoal||null)),title:scene.title,referenceVideo:fresh?'../renders/previs.mp4':null,videoStatus,
     spec:{duration:scene.duration,width:scene.width,height:scene.height,fps:scene.fps},coordinates:'metres, Y up, -Z forward',timeBasis:'SEGMENT',
@@ -84,12 +82,11 @@ export async function createHandoff(root,{publish=true}={}){
   };
   const result={
     ...(fresh?receipt:{render_status:videoStatus}),scope:'PREVIS_CAMERA_BLOCKING',adapter_version:ADAPTER_VERSION,
-    formal_id:lineage.formal_id,base_prompt_version:lineage.prompt_version,budget_version:lineage.budget_version,
     source_time_basis:'SEGMENT',source_lineage:sourceInfo,unit:upstream?.packet.unit||null,sources:upstream?.packet.sources||[],sourceContext:context,structural_checks:'PASS',...identity,
-    semantic_review:legacyCurrent?review:reviewed.checks.text_alignment||'NOT_RUN',review_reuse_status:legacyCurrent?'CURRENT':reviewed.status,
+    semantic_review:reviewed.checks.text_alignment||'NOT_RUN',review_reuse_status:reviewed.status,
     scoped_review:reviewed,checks,delivery_goal:goal,transitions,boundary:manifest.boundary,fight_proxy:{status:fightCurrent?fightReport.status:'NOT_RUN_OR_STALE',report:fightCurrent?'../review/fight-report.json':null},state_captures:{status:states.status,report:states.status==='CURRENT'?'../review/state-capture-report.json':null},timeMapping:scene.timeMapping||null,
-    unimplemented:fightImplementation?[...(fightImplementation.not_implemented||[]),{capability:'Source implementation assumptions and visual acceptance remain separately reviewed.',status:'NOT_RUN'}]:reviewed.status==='CURRENT'&&Array.isArray(review?.unimplemented)?review.unimplemented:legacyCurrent?review.unimplemented||[]:['Detailed action, original speech/audio and final-model performance retain their actual separate check status.'],
-    upstream_revision_required:revisions.requests.some(item=>item.route==='UPSTREAM_REVISION')?true:legacyCurrent&&typeof review.upstream_revision_required==='boolean'?review.upstream_revision_required:null,
+    unimplemented:fightImplementation?[...(fightImplementation.not_implemented||[]),{capability:'Source implementation assumptions and visual acceptance remain separately reviewed.',status:'NOT_RUN'}]:reviewed.status==='CURRENT'&&Array.isArray(review?.unimplemented)?review.unimplemented:['Detailed action, original speech/audio and final-model performance retain their actual separate check status.'],
+    upstream_revision_required:revisions.requests.some(item=>item.route==='UPSTREAM_REVISION')?true:null,
     revision_requests:revisions,spatial,final_model_media_review:checks.final_model.status,upstream_writes:false
   };
   const quote=value=>'"'+String(value).replaceAll('"','""')+'"';
@@ -103,7 +100,8 @@ export async function createHandoff(root,{publish=true}={}){
     outputs.set('reference-attachments.md','# 仙侠战斗预演参考\n\n来源：'+sourceInfo.provider+'；制作段：'+sourceInfo.unit_id+'。\n\n'+binding+'\n\nsource-execution.md 是来源接收包的执行文本视图；其原文/整理方式和证据来源保留在intake，不把它提升为已生成或已验收媒体。fight-map.json 保留全场到段内时钟与原镜号。原关键帧提示词、独立状态图和MP4抽帧分别记录。\n\n用户目标：'+goal.status+'。代理接触、器物和效果不证明真实骨骼、受力、语义或声音通过。\n');
   }else if(upstream){
     outputs.set('prompts.md',upstream.packet.master.text);
-    outputs.set('reference-attachments.md','# 三维预演参考附件\n\n正式段：'+lineage.formal_id+'；母稿：'+lineage.prompt_version+'；预算：'+lineage.budget_version+'。\n\n'+binding+'\n\n预演承载已实现的机位、代理动作与空间，不继承占位外观或审片控件。prompts.md 保留上游母稿原文；素材、能力、声音及最终模型检查见 checks.json。\n\n视频状态：'+videoStatus+'。用户目标：'+goal.status+'。条件计划、参考包与真实提交分别记录；本工具没有推进上游覆盖。\n');
+    const sourceDescription='来源单元：'+sourceInfo.unit_id+'；来源修订：'+sourceInfo.source_revision+'。';
+    outputs.set('reference-attachments.md','# 三维预演参考附件\n\n'+sourceDescription+'\n\n'+binding+'\n\n预演承载已实现的机位、代理动作与空间，不继承占位外观或审片控件。prompts.md 保留上游原稿全文；素材、能力、声音及最终模型检查见 checks.json。\n\n视频状态：'+videoStatus+'。用户目标：'+goal.status+'。条件计划、参考包与真实提交分别记录；本工具只读来源。\n');
     outputs.set('adaptation-map.json',JSON.stringify(scene.adaptationMap,null,2)+'\n');
     outputs.set('transition-map.json',JSON.stringify({schema_version:'PREVIS_TRANSITION_MAP_V1',source:upstream.packet.transition_context||null,freshness:transitions,implementation:scene.transitionMap||[],upstream_writes:false},null,2)+'\n');
   }else outputs.set('demo-notes.md','# '+scene.title+' · 运行时演示\n\n此工程没有绑定真实上游正式段，不能作为正式母稿或平台提交稿。\n\n'+binding+'\n\n'+scene.shots.map(shot=>'- '+shot.id+': '+shot.start+'–'+shot.end+' 秒；'+shot.beat).join('\n')+'\n');

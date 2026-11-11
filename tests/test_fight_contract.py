@@ -24,28 +24,12 @@ import fight_contract as fight
 FIXTURES = ROOT / 'tests/fixtures/fight-source'
 NODE_MODULE = ROOT / 'assets/starter/scripts/fight-source.mjs'
 BRIDGE = FIXTURES / 'check-source.mjs'
-ARCHIVE = Path(os.environ.get('FIGHT_UPSTREAM_FIXTURES', str(ROOT / 'outputs/xianxia-adapter-review-20261106/source/examples')))
+ARCHIVE = Path(os.environ['FIGHT_UPSTREAM_FIXTURES']) if os.environ.get('FIGHT_UPSTREAM_FIXTURES') else None
 
 
 def json_bytes(value):
     return (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n').encode('utf-8')
 
-
-def legacy(project):
-    result = copy.deepcopy(project)
-    result['schema_version'] = '1.1'
-    result.pop('cost', None)
-    result.pop('knowledge', None)
-    result['scene'].pop('attrition', None)
-    for row in result['beats']:
-        row.pop('marks', None)
-    for row in result['shots']:
-        for field in ('light', 'risk', 'fallback'):
-            row.pop(field, None)
-        row['execution'].pop('light', None)
-    for row in result['keyframes']:
-        row.pop('role', None)
-    return result
 
 
 class FightFixture(unittest.TestCase):
@@ -53,7 +37,7 @@ class FightFixture(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='fight-contract-')
         self.addCleanup(self.temp.cleanup)
         self.work = Path(self.temp.name)
-        self.project = fight.read_json(FIXTURES / 'synthetic-1.2.json')
+        self.project = fight.read_json(FIXTURES / 'synthetic-1.3.json')
         self.source = self.work / '原创 源.json'
         self.packet_file = self.work / 'unit/upstream-intake.json'
         self.write_source()
@@ -111,7 +95,7 @@ class FightFixture(unittest.TestCase):
 
 
 class ContractValidation(FightFixture):
-    def test_public_contract_fixture_12_and_original_text(self):
+    def test_public_contract_fixture_13_and_original_text(self):
         self.assertIs(fight.validate_project(self.project), self.project)
         packet = self.packet()
         self.assertEqual(packet['source_snapshot'], self.project)
@@ -121,13 +105,15 @@ class ContractValidation(FightFixture):
         self.assertEqual(packet['structural_status'], 'pass')
         self.node()
 
-    def test_legacy11_works_in_python_and_actual_node(self):
-        self.project = legacy(self.project)
-        self.write_source()
-        packet = self.packet()
-        self.assertEqual(packet['selection']['source_schema_version'], '1.1')
-        self.assertNotIn('role', packet['selection']['keyframes'][0])
-        self.node()
+    def test_previous_source_versions_are_rejected_in_python_and_node(self):
+        self.packet()
+        for version in ('1.0', '1.1', '1.2'):
+            with self.subTest(version=version):
+                self.project['schema_version'] = version
+                with self.assertRaisesRegex(fight.FightContractError, 'schema_version'):
+                    fight.validate_project(self.project)
+                self.write_source()
+                self.node(False)
 
     def test_unknown_version_rejected(self):
         self.expect_invalid(lambda p: p.update(schema_version='1.0'), 'schema_version')
@@ -287,7 +273,6 @@ class ContractValidation(FightFixture):
         self.assertEqual(fight.sha256(packet['master']['text'].encode('utf-8')), packet['master']['text_sha256'])
 
     def test_requires_collected_recursively(self):
-        self.project = legacy(self.project)
         self.project['beats'][2]['requires'] = ['sy_cross']
         self.write_source()
         packet = self.packet('sy_unit_c')
@@ -597,29 +582,6 @@ for name, target in UNKNOWN_TARGETS.items():
         self.node(False)
     setattr(ContractValidation, 'test_unknown_field_' + name + '_python_and_node', test_unknown)
 
-LEGACY_MIXINS = {
-    'cost': lambda p: p.update(cost=[]),
-    'knowledge': lambda p: p.update(knowledge=[]),
-    'marks': lambda p: p['beats'][0].update(marks=['breath']),
-    'light': lambda p: p['shots'][0].update(light='light'),
-    'risk': lambda p: p['shots'][0].update(risk='low'),
-    'fallback': lambda p: p['shots'][0].update(fallback='fallback'),
-    'execution_light': lambda p: p['shots'][0]['execution'].update(light='light'),
-    'role': lambda p: p['keyframes'][0].update(role='single'),
-    'attrition': lambda p: p['scene'].update(attrition=[]),
-}
-for name, mutate in LEGACY_MIXINS.items():
-    def test_legacy_mixin(self, mutate=mutate):
-        self.project = legacy(self.project)
-        self.write_source()
-        self.packet()
-        mutate(self.project)
-        with self.assertRaises(fight.FightContractError):
-            fight.validate_project(self.project)
-        self.write_source()
-        self.node(False)
-    setattr(ContractValidation, 'test_legacy11_rejects12_' + name, test_legacy_mixin)
-
 SOURCE_MUTATIONS = {
     'shot_camera': lambda p: p['shots'][1].update(camera='SYNTHETIC selected camera changed'),
     'cue_text': lambda p: p['shots'][1]['execution']['cues'][0].update(text='SYNTHETIC selected cue changed'),
@@ -647,10 +609,10 @@ for name, mutate in SOURCE_MUTATIONS.items():
 
 
 class LocalPublicArchives(FightFixture):
-    @unittest.skipUnless(ARCHIVE.is_dir(), 'optional local upstream example archive not supplied')
-    def test_four_public_examples_all_original_segments_actual_cli_node_no_writes(self):
+    @unittest.skipUnless(ARCHIVE is not None and ARCHIVE.is_dir(), 'explicit local upstream example archive not supplied or no longer available')
+    def test_five_public_examples_all_original_segments_actual_cli_node_no_writes(self):
         files = sorted(ARCHIVE.glob('*.json'))
-        self.assertEqual(len(files), 4)
+        self.assertEqual(len(files), 5)
         archive_files = [file for file in ARCHIVE.parent.rglob('*') if file.is_file()]
         before = {file: hashlib.sha256(file.read_bytes()).hexdigest() for file in archive_files}
         commands = 0
@@ -663,13 +625,12 @@ class LocalPublicArchives(FightFixture):
                     self.cli('--project', file, '--segment', segment['id'], '--out', self.packet_file, '--upstream-skill-dir', ARCHIVE.parent)
                     packet = fight.read_json(self.packet_file)
                     self.assertEqual(packet['source_snapshot'], project)
-                    self.assertEqual(packet['upstream_provenance']['skill_version'], '1.3')
-                    self.assertEqual(packet['upstream_provenance']['git_commit'], '26f26971e52b1ecb8300cc867f32bafa9f1f06c9')
+                    self.assertEqual(packet['upstream_provenance']['skill_version'], '1.4')
                     self.node()
                     commands += 2
         after = {file: hashlib.sha256(file.read_bytes()).hexdigest() for file in archive_files}
         self.assertEqual(before, after)
-        self.assertEqual(commands, 24)
+        self.assertEqual(commands, 30)
 
 
 if __name__ == '__main__':

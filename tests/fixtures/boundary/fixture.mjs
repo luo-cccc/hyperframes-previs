@@ -2,10 +2,12 @@ import {cp,mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {sourceFingerprint} from '../../../assets/starter/scripts/source-fingerprint.mjs';
 import {renderSceneText} from '../../../assets/starter/src/render-identity.js';
-import {checkUpstream,currentStateScope} from '../../../assets/starter/scripts/check-upstream.mjs';
-import {collectTransitionContext} from '../../../assets/starter/scripts/transition-context.mjs';
+import {checkUpstream} from '../../../assets/starter/scripts/check-upstream.mjs';
+import {bindUpstream} from '../../../assets/starter/scripts/bind-upstream.mjs';
+import {sourceLineage} from '../../../assets/starter/scripts/source-lineage.mjs';
 import {digest,jsonText,runMedia,hashFile,readJson} from '../../../assets/starter/scripts/boundary-utils.mjs';
 
 export const repo=fileURLToPath(new URL('../../../',import.meta.url));
@@ -29,23 +31,19 @@ export async function makeVideo(root,{fps,duration}={}){
 }
 export async function seal(root){
   const scene=await readJson(path.join(root,'scene.json')),upstream=await checkUpstream(root,scene);
-  const receipt={type:'PREVIS_RENDER',render_identity:'PREVIS_RENDER_CONTENT_V2',render_status:'COMPLETED',source_time_basis:'SEGMENT',sourceContext:{mode:'SYNTHETIC_FFMPEG_FIXTURE',upstream_authority:false,notice:'Generated test pattern and synthetic source records; not a HyperFrames or real upstream acceptance claim.'},scene_sha256:digest(renderSceneText(scene)),scene_file_sha256:await hashFile(path.join(root,'scene.json')),render_inputs_sha256:(await sourceFingerprint(root)).sha256,intake_sha256:upstream?.intakeSha256||null,formal_id:upstream?.packet.formal_id||null,base_prompt_version:upstream?.packet.prompt_version||null,budget_version:upstream?.packet.budget_version||null,video:'previs.mp4',video_sha256:await hashFile(path.join(root,'renders/previs.mp4'))};
+  const receipt={type:'PREVIS_RENDER',render_identity:'PREVIS_RENDER_CONTENT_V2',render_status:'COMPLETED',source_time_basis:'SEGMENT',sourceContext:{mode:'SYNTHETIC_FFMPEG_FIXTURE',upstream_authority:false,notice:'Generated test pattern and synthetic source records; not a HyperFrames or real upstream acceptance claim.'},scene_sha256:digest(renderSceneText(scene)),scene_file_sha256:await hashFile(path.join(root,'scene.json')),render_inputs_sha256:(await sourceFingerprint(root)).sha256,intake_sha256:upstream?.intakeSha256||null,source_lineage:sourceLineage(upstream,scene),video:'previs.mp4',video_sha256:await hashFile(path.join(root,'renders/previs.mp4'))};
   await save(path.join(root,'renders/render-receipt.json'),receipt);return receipt;
 }
-export async function bindSynthetic(root,formalId='FORMAL_A',{stateJson=false}={}){
+export async function bindSynthetic(root,unitId='UNIT_A',{fragment=false}={}){
   const scene=await readJson(path.join(root,'scene.json'));
-  const lineage={project_id:'SYNTHETIC_PROJECT_ONLY',formal_id:formalId,prompt_version:'P1',budget_version:'B1'};
-  const settings=Object.fromEntries(Object.entries({video_aspect_ratio:'5:3',visual_style:'SYNTHETIC_TEST_ONLY',segment_max_s:2}).map(([key,selected])=>[key,{selected,status:'CONFIRMED',decision_ref:'SYNTHETIC_DECISION'}]));
-  const state={project_id:lineage.project_id,state_version:'SYNTHETIC_1',workflow_schema:'TEST_ONLY',source_script_ref:{version:'SOURCE_TEST_1'},production_settings:settings,coverage_ledger:[{formal_id:formalId,status:'DONE',prompt_version:'P1',budget_version:'B1',source_script_version:'SOURCE_TEST_1',delivery_ref:'SYNTHETIC_DELIVERY',start_state:'closed',end_state:'half-open',checks:{TEXT:{status:'PASS',scope:'SYNTHETIC TEXT CHECK ONLY',evidence:'SYNTHETIC_TEST_EVIDENCE'}}}],prompt_versions:[{formal_id:formalId,prompt_version:'P1',budget_version:'B1',budget_status:'CHECKED',status:'DONE',delivery_ref:'SYNTHETIC_DELIVERY'}],step_ledger:[{step_id:formalId,status:'DONE',prompt_version:'P1'}],transition_plan:[{id:'T_A',formal_id:formalId,prompt_version:'P1',motion:'left hand keeps contact',status:'PLANNED'},{id:'T_B',formal_id:formalId,prompt_version:'P1',motion:'unchanged other transition',status:'PLANNED'}]};
-  const budget={...lineage,time_basis:'SEGMENT',duration_s:scene.duration,target_max_s:2,shots:scene.shots.map(shot=>({id:shot.id,start_s:shot.start,end_s:shot.end}))};
-  const master='场《合成测试》\n仅测试来源接口，无真实上游授权或语义验收。';
-  const files={state:['state.json',jsonText(state)],budget:['budget.json',jsonText(budget)],master:['master.md',master],source_script:['source.md','SYNTHETIC SOURCE ONLY'],text_evidence:['text.txt','SYNTHETIC EVIDENCE ONLY']};
-  const sources=[];for(const [role,[name,text]] of Object.entries(files)){await save(path.join(root,'synthetic-upstream',name),text);sources.push({role,path:'synthetic-upstream/'+name,sha256:digest(text)})}
-  const packet={schema_version:'STORYBOARD_PREVIS_ADAPTER_V1',upstream_writes:false,input_mode:stateJson?'STATE_JSON':'MANUAL_TRANSCRIPTION',...lineage,master:{text:master,text_sha256:digest(master)},budget,production_settings:settings,sources,asset_catalog:{characters:[]},upstream_snapshot:{character_profiles:[]}};
-  if(stateJson){packet.validation_profile='SCOPED_STATE_V3';packet.state_scope=currentStateScope(state,formalId,'SCOPED_STATE_V3');packet.transition_context=collectTransitionContext(state,formalId,'P1')}
-  await save(path.join(root,'upstream-intake.json'),packet);
-  scene.upstream={...lineage,intake:'upstream-intake.json',intake_sha256:await hashFile(path.join(root,'upstream-intake.json'))};scene.assetBindings=[];scene.sourceAssetIds={characters:[],scenes:[],props:[]};scene.adaptationMap=scene.shots.map(shot=>({source_shot_id:shot.id,scene_shot_id:shot.id,source_ref:'SYNTHETIC_MASTER',status:'MAPPED'}));
-  await save(path.join(root,'scene.json'),scene);await seal(root);return {scene,packet,state};
+  const source={schema_version:'PREVIS_STORYBOARD_SOURCE_V1',id:unitId,project_id:'SYNTHETIC_PROJECT_ONLY',version:'SOURCE_TEST_1',time_basis:'SEGMENT',duration_s:scene.duration,production_settings:{video_aspect_ratio:'5:3',visual_style:'SYNTHETIC_TEST_ONLY'},shots:scene.shots.map(shot=>({id:shot.id,start_s:shot.start,end_s:shot.end})),master:{path:'master.md'+(fragment?'#selected':'')},asset_catalog:{actors:[],scenes:[],props:[]},start_state:'closed',end_state:'half-open'};
+  const master='# selected\n场《合成测试》\n仅测试来源接口，无真实上游授权或语义验收。\n\n# other\nUNRELATED ORIGINAL TEXT\n';
+  const input=path.join(root,'synthetic-upstream/source.json');
+  await save(input,source);await save(path.join(root,'synthetic-upstream/master.md'),master);
+  execFileSync(process.env.PREVIS_PYTHON||'python',['-B','-X','utf8',path.join(repo,'scripts/intake_storyboard.py'),'--project',input,'--out',path.join(root,'upstream-intake.json')],{windowsHide:true,encoding:'utf8'});
+  const packet=await readJson(path.join(root,'upstream-intake.json'));
+  scene.assetBindings=[];scene.sourceAssetIds={actors:[],scenes:[],props:[]};scene.adaptationMap=scene.shots.map(shot=>({source_shot_id:shot.id,scene_shot_id:shot.id,source_ref:'SYNTHETIC_MASTER',status:'MAPPED'}));
+  await save(path.join(root,'scene.json'),scene);const bound=await bindUpstream(root);await seal(root);return {scene:bound.scene,packet,source};
 }
 export function planFor({fromProject='.',toProject='.',fromShot='S01',toShot='S02',fromTime=.55,toTime=.6,before=.2,after=.2,transitionId}={}){
   return {schema_version:'PREVIS_BOUNDARY_PLAN_V1',connections:[{id:'selected-connection',kind:fromProject===toProject?'EXPLICIT_SOURCE_POINTS':'CROSS_PROJECT',...(transitionId?{transition_id:transitionId}:{}),from:{project:fromProject,shot_id:fromShot,time_s:fromTime},to:{project:toProject,shot_id:toShot,time_s:toTime},window_before_s:before,window_after_s:after}]};

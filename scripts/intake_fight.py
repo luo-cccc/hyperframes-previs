@@ -11,7 +11,7 @@ from fight_contract import FightContractError, create_packet
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     choice = parser.add_mutually_exclusive_group(required=True)
-    choice.add_argument('--project', type=Path, help='Existing declared 1.1/1.2 JSON; never modified.')
+    choice.add_argument('--project', type=Path, help='Current declared 1.3 JSON; never modified.')
     choice.add_argument('--draft', type=Path, help='Explicit PREVIS_FIGHT_DRAFT_V1 human mapping, not an upstream JSON claim.')
     parser.add_argument('--segment', help='Original segment ID; required with --project, must agree with draft if supplied.')
     parser.add_argument('--out', type=Path, required=True, help='New file; existing evidence is never overwritten.')

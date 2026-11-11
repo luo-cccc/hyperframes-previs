@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Independent read-only fight input contract; no upstream implementation is imported.
 
-Field vocabulary follows the declared 1.1/1.2 delivery contract. Structural
+Field vocabulary follows the current declared 1.3 delivery contract. Structural
 checks do not establish choreography, reference observation, or media quality.
 """
 import base64
@@ -14,12 +14,14 @@ from pathlib import Path
 import re
 import struct
 import subprocess
+import unicodedata
+from fight_layers import LAYER_FIELDS, validate_layers, select_layers, layer_fragments
 from intake_storyboard import section_text
 
 PROVIDER = 'xianxia-fight-director'
-ADAPTER_VERSION = '0.6.0'
+ADAPTER_VERSION = '0.7.0'
 SCHEMA = 'PREVIS_FIGHT_ADAPTER_V1'
-PROFILE = 'FIGHT_SELECTED_SCOPE_V1'
+PROFILE = 'FIGHT_SELECTED_SCOPE_V2'
 EPS = 1e-6
 ACTORS = {'character', 'creature', 'manifestation'}
 KINDS = ACTORS | {'scene', 'prop', 'formation'}
@@ -113,14 +115,11 @@ def strings(value, at, nonempty=False, unique=False):
 
 
 def validate_project(project):
-    """Validate both supported declared versions, rejecting unknown fields at every level."""
+    """Validate declared versions without upgrading or inventing author records."""
     base = 'schema_version title duration_sec aspect_ratio style assumptions constraints design assets scene beats shots segments keyframes'.split()
-    fields(project, base, ('cost', 'knowledge', 'review'))
+    fields(project, base, ('cost', 'knowledge', 'review') + LAYER_FIELDS)
     version = project['schema_version']
-    need(version in ('1.1', '1.2'), 'schema_version: only explicit 1.1 or 1.2 is supported')
-    modern = version == '1.2'
-    if not modern:
-        need('cost' not in project and 'knowledge' not in project, '1.1 cannot contain 1.2 cost/knowledge fields')
+    need(version == '1.3', 'schema_version: only explicit 1.3 is supported; supply current upstream content')
     for key in ('title', 'aspect_ratio', 'style'):
         text(project[key], key)
     number(project['duration_sec'], 'duration_sec')
@@ -150,15 +149,14 @@ def validate_project(project):
 
     shapes = {
         'assets': ('id kind name anchors states image_prompt', 'reference'),
-        'beats': ('id start end actors action response result requires', 'marks' if modern else ''),
-        'shots': ('id start end beat_ids asset_ids opening_state camera effects sound end_state execution' + (' light risk' if modern else ''), 'fallback' if modern else ''),
+        'beats': ('id start end actors action response result requires', 'marks track'),
+        'shots': ('id start end beat_ids asset_ids opening_state camera effects sound end_state execution light risk', 'fallback track outer_state'),
         'segments': ('id shot_ids opening_state closing_state prompt_context', ''),
-        'keyframes': ('id shot_id time_sec asset_ids state prompt' + (' role' if modern else ''), ''),
+        'keyframes': ('id shot_id time_sec asset_ids state prompt role', ''),
     }
-    if modern:
-        shapes['cost'] = ('id owner item from_beat irreversible consequence', '')
-        if 'knowledge' in project:
-            shapes['knowledge'] = ('id holder belief truth from_beat cue', 'resolved_by')
+    shapes['cost'] = ('id owner item from_beat irreversible consequence', '')
+    if 'knowledge' in project:
+        shapes['knowledge'] = ('id holder belief truth from_beat cue', 'resolved_by')
     identities, maps = set(), {}
     for group, (required, optional) in shapes.items():
         rows = project.get(group)
@@ -172,7 +170,7 @@ def validate_project(project):
             need(identity not in identities, group + '.id: ID is not globally unique: ' + identity)
             identities.add(identity)
             maps[group][identity] = row
-    fields(project['scene'], ('asset_id', 'geography') + (('attrition',) if modern else ()), at='scene')
+    fields(project['scene'], ('asset_id', 'geography', 'attrition'), at='scene')
     text(project['scene']['geography'], 'scene.geography')
     asset_map, beat_map, shot_map = maps['assets'], maps['beats'], maps['shots']
 
@@ -229,15 +227,14 @@ def validate_project(project):
         cursor = shot['end']
         refs(shot['asset_ids'], asset_map, 'shots.asset_ids')
         refs(shot['beat_ids'], beat_map, 'shots.beat_ids')
-        for key in ('opening_state', 'end_state', 'camera', 'effects', 'sound') + (('light',) if modern else ()):
+        for key in ('opening_state', 'end_state', 'camera', 'effects', 'sound') + ('light',):
             text(shot[key], 'shots.' + key)
-        if modern:
-            need(shot['risk'] in ('low', 'high'), 'shots.risk: expected low or high')
-            need(('fallback' in shot) == (shot['risk'] == 'high'), 'shots.fallback: required only for high risk')
-            if 'fallback' in shot:
-                executable_texts.append(shot['fallback'])
+        need(shot['risk'] in ('low', 'high'), 'shots.risk: expected low or high')
+        need(('fallback' in shot) == (shot['risk'] == 'high'), 'shots.fallback: required only for high risk')
+        if 'fallback' in shot:
+            executable_texts.append(shot['fallback'])
         execution = shot['execution']
-        exec_keys = ('opening_state', 'end_state', 'camera', 'effects', 'sound') + (('light',) if modern else ())
+        exec_keys = ('opening_state', 'end_state', 'camera', 'effects', 'sound') + ('light',)
         fields(execution, exec_keys + ('cues',), at='shots.execution')
         for key in exec_keys:
             text(execution[key], 'shots.execution.' + key)
@@ -255,7 +252,7 @@ def validate_project(project):
             cue_cursor = cue['end']
             executable_texts.append(cue['text'])
         need(abs(cue_cursor - shot['end']) <= EPS, 'execution.cues: missing shot end')
-        if previous:
+        if previous and not project.get('tracks'):
             need(previous['end_state'] == shot['opening_state'], 'shots: world states are not literally continuous')
             need(previous['execution']['end_state'] == execution['opening_state'], 'shots: execution states are not literally continuous')
         previous = shot
@@ -291,61 +288,62 @@ def validate_project(project):
         need(shot['start'] - EPS <= frame['time_sec'] <= shot['end'] + EPS, 'keyframes.time_sec: outside closed owning-shot interval')
         for key in ('state', 'prompt'):
             text(frame[key], 'keyframes.' + key)
-        if modern:
-            need(frame['role'] in ('single', 'prep', 'contact', 'result', 'handoff'), 'keyframes.role: unsupported')
+        need(frame['role'] in ('single', 'prep', 'contact', 'result', 'handoff'), 'keyframes.role: unsupported')
         frame_counts[frame['shot_id']] += 1
         executable_texts.append(frame['prompt'])
     need(all(frame_counts.values()), 'keyframes: every shot needs a frame')
-    if modern:
-        attrition = project['scene']['attrition']
-        need(isinstance(attrition, list) and bool(attrition), 'scene.attrition: expected nonempty array')
-        for row in attrition:
-            fields(row, ('id', 'mark', 'from_beat', 'consequence'), at='scene.attrition')
-            text(row['id'], 'scene.attrition.id')
-            need(re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', row['id']) is not None and row['id'] not in identities, 'scene.attrition.id: invalid or repeated global ID')
-            identities.add(row['id'])
-            for key in ('mark', 'consequence'):
-                text(row[key], 'scene.attrition.' + key)
-            refs([row['from_beat']], beat_map, 'scene.attrition.from_beat')
-        for group in ('cost', 'knowledge'):
-            for row in project.get(group, []):
-                owner = 'owner' if group == 'cost' else 'holder'
-                refs([row[owner]], asset_map, group + '.' + owner, actors=True)
-                refs([row['from_beat']], beat_map, group + '.from_beat')
-                for key in (('item', 'consequence') if group == 'cost' else ('belief', 'truth', 'cue')):
-                    text(row[key], group + '.' + key)
-                if group == 'cost':
-                    need(isinstance(row['irreversible'], bool), 'cost.irreversible: expected boolean')
-                else:
-                    need(row['belief'] != row['truth'], 'knowledge: belief and truth must differ')
-                    if 'resolved_by' in row:
-                        refs([row['resolved_by']], beat_map, 'knowledge.resolved_by')
-                        need(row['resolved_by'] != row['from_beat'] and beat_map[row['resolved_by']]['start'] >= beat_map[row['from_beat']]['start'] - EPS, 'knowledge.resolved_by: same or earlier than origin')
-        marked = {mark: [beat for beat in project['beats'] if mark in beat.get('marks', [])] for mark in ('pivotal', 'breath', 'adaptation')}
-        need(all(marked.values()), 'beats.marks: pivotal, breath and adaptation records are required for 1.2')
-        for beat in marked['pivotal']:
-            triple = []
-            for role in ('prep', 'contact', 'result'):
-                times = [frame['time_sec'] for frame in project['keyframes'] if frame['role'] == role and beat['start'] - EPS <= frame['time_sec'] <= beat['end'] + EPS]
-                need(bool(times), 'keyframes: pivotal beat missing ' + role)
-                triple.append(min(times))
-            need(triple[0] < triple[1] < triple[2], 'keyframes: pivotal prep/contact/result times must increase')
-        for beat in marked['breath']:
-            need('pivotal' not in beat.get('marks', []) and not any(beat['start'] < other['end'] - EPS and other['start'] < beat['end'] - EPS for other in marked['pivotal']), 'beats: breath overlaps pivotal')
-        need(all(beat['requires'] for beat in marked['adaptation']), 'beats: adaptation requires a completed prerequisite')
-        for segment in project['segments'][:-1]:
-            last = shot_map[segment['shot_ids'][-1]]
-            frames = [frame for frame in project['keyframes'] if frame['role'] == 'handoff' and abs(frame['time_sec'] - last['end']) <= EPS]
-            need(bool(frames) and all(frame['shot_id'] == last['id'] for frame in frames), 'keyframes: handoff belongs to preceding segment final shot at its closed endpoint')
-        need(len(project['shots']) == 1 or len({shot['light'] for shot in project['shots']}) >= 2, 'shots.light: multi-shot battle requires differing light registration')
-        earliest = min(beat['start'] for beat in marked['pivotal'])
-        need(any(beat_map[row['from_beat']]['end'] <= earliest + EPS for row in attrition), 'scene.attrition: no mark formed before earliest pivotal beat')
-        need(any(row['irreversible'] for row in project['cost']) and len({row['owner'] for row in project['cost']}) >= 2, 'cost: irreversible expenditure and at least two owners required')
+    attrition = project['scene']['attrition']
+    need(isinstance(attrition, list) and bool(attrition), 'scene.attrition: expected nonempty array')
+    for row in attrition:
+        fields(row, ('id', 'mark', 'from_beat', 'consequence'), at='scene.attrition')
+        text(row['id'], 'scene.attrition.id')
+        need(re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', row['id']) is not None and row['id'] not in identities, 'scene.attrition.id: invalid or repeated global ID')
+        identities.add(row['id'])
+        for key in ('mark', 'consequence'):
+            text(row[key], 'scene.attrition.' + key)
+        refs([row['from_beat']], beat_map, 'scene.attrition.from_beat')
+    for group in ('cost', 'knowledge'):
+        for row in project.get(group, []):
+            owner = 'owner' if group == 'cost' else 'holder'
+            refs([row[owner]], asset_map, group + '.' + owner, actors=True)
+            refs([row['from_beat']], beat_map, group + '.from_beat')
+            for key in (('item', 'consequence') if group == 'cost' else ('belief', 'truth', 'cue')):
+                text(row[key], group + '.' + key)
+            if group == 'cost':
+                need(isinstance(row['irreversible'], bool), 'cost.irreversible: expected boolean')
+            else:
+                need(row['belief'] != row['truth'], 'knowledge: belief and truth must differ')
+                if 'resolved_by' in row:
+                    refs([row['resolved_by']], beat_map, 'knowledge.resolved_by')
+                    need(row['resolved_by'] != row['from_beat'] and beat_map[row['resolved_by']]['start'] >= beat_map[row['from_beat']]['start'] - EPS, 'knowledge.resolved_by: same or earlier than origin')
+    marked = {mark: [beat for beat in project['beats'] if mark in beat.get('marks', [])] for mark in ('pivotal', 'breath', 'adaptation')}
+    need(all(marked.values()), 'beats.marks: pivotal, breath and adaptation records are required')
+    for beat in marked['pivotal']:
+        triple = []
+        for role in ('prep', 'contact', 'result'):
+            times = [frame['time_sec'] for frame in project['keyframes'] if frame['role'] == role and shot_map[frame['shot_id']].get('track') == beat.get('track') and beat['start'] - EPS <= frame['time_sec'] <= beat['end'] + EPS]
+            need(bool(times), 'keyframes: pivotal beat missing ' + role)
+            triple.append((min(times), max(times)))
+        need(triple[0][1] < triple[1][0] and triple[1][1] < triple[2][0], 'keyframes: pivotal prep/contact/result times must increase')
+    for beat in marked['breath']:
+        need('pivotal' not in beat.get('marks', []) and not any(beat['start'] < other['end'] - EPS and other['start'] < beat['end'] - EPS for other in marked['pivotal'] if other.get('track') == beat.get('track')), 'beats: breath overlaps pivotal')
+    need(all(beat['requires'] for beat in marked['adaptation']), 'beats: adaptation requires a completed prerequisite')
+    for segment in project['segments'][:-1]:
+        last = shot_map[segment['shot_ids'][-1]]
+        frames = [frame for frame in project['keyframes'] if frame['role'] == 'handoff' and abs(frame['time_sec'] - last['end']) <= EPS]
+        need(any(frame['shot_id'] == last['id'] for frame in frames), 'keyframes: handoff belongs to preceding segment final shot at its closed endpoint')
+    need(len(project['shots']) == 1 or len({shot['light'] for shot in project['shots']}) >= 2, 'shots.light: multi-shot battle requires differing light registration')
+    earliest = min(beat['start'] for beat in marked['pivotal'])
+    need(any(beat_map[row['from_beat']]['end'] <= earliest + EPS for row in attrition), 'scene.attrition: no mark formed before earliest pivotal beat')
+    need(any(row['irreversible'] for row in project['cost']) and len({row['owner'] for row in project['cost']}) >= 2, 'cost: irreversible expenditure and at least two owners required')
+    executable_texts.extend(validate_layers(project, identities, fields, text, number, strings, need, EPS))
+    for asset in project['assets']:
+        executable_texts.extend((asset['name'], *asset['anchors'], *asset.get('reference', {}).values()))
     # Only reject timecode syntax in copyable text, never derive actions from it.
     for value in executable_texts:
         text(value, 'copyable text')
-        need(re.search(r'[0-9]+(?:\.[0-9]+)?\s*秒|[0-9]+(?:[:：][0-9]{1,2}){1,2}(?:\.[0-9]+)?', value) is None, 'copyable text: numeric timecode must stay in numeric cue fields')
-        need(not any(identity in value for identity in identities if len(identity) >= 4), 'copyable text: contains internal registered ID')
+        need(re.search(r'[0-9]+(?:\.[0-9]+)?\s*秒|[0-9]+(?::[0-9]{2}){1,2}(?:\.[0-9]+)?', unicodedata.normalize('NFKC', value)) is None, 'copyable text: numeric timecode must stay in numeric cue fields')
+        need(not any(re.search(r'(?<![A-Za-z0-9_-])' + re.escape(identity) + r'(?![A-Za-z0-9_-])', value) for identity in identities), 'copyable text: contains internal registered ID')
     return project
 
 
@@ -422,6 +420,7 @@ def select_project(project, segment_id):
         'states': {'world': {'opening_state': shots[0]['opening_state'], 'end_state': shots[-1]['end_state']}, 'execution': {'opening_state': shots[0]['execution']['opening_state'], 'end_state': shots[-1]['execution']['end_state']}, 'segment': {'opening_state': segment['opening_state'], 'closing_state': segment['closing_state']}},
         'transition_context': {'schema_version': 'PREVIS_FIGHT_BOUNDARY_CONTEXT_V1', 'unit_id': segment_id, 'boundaries': boundaries},
     }
+    select_layers(project, selection)
     return copy.deepcopy(selection)
 
 
@@ -444,6 +443,7 @@ def execution_master(selection):
         for key in ('camera', 'effects', 'light', 'sound', 'end_state'):
             if key in execution:
                 fragments.append({'pointer': prefix + key, 'text': execution[key]})
+    fragments.extend(layer_fragments(selection))
     content = '\n\n'.join(row['text'] for row in fragments)
     return {'text': content, 'text_sha256': sha256(content.encode('utf-8')), 'origin': 'SELECTED_EXECUTION_FIELDS', 'fragments': fragments}
 
@@ -544,9 +544,10 @@ def create_packet(input_path, segment_id, output_path, *, draft_mode=False, evid
         need(segment_id is not None, '--segment must identify an original segment ID')
         project = validate_project(document)
     selection = select_project(project, segment_id)
+    profile = selection['schema_version']
     selected_sha = digest(selection)
     unit, budget = mapped_budget(selection)
-    source = source_reference(input_path, output_path, 'draft' if draft_mode else 'project', raw, {'kind': 'FIGHT_SEGMENT_V1', 'segment_id': segment_id, 'profile': PROFILE})
+    source = source_reference(input_path, output_path, 'draft' if draft_mode else 'project', raw, {'kind': 'FIGHT_SEGMENT_V1', 'segment_id': segment_id, 'profile': profile})
     source['selected_sha256'] = selected_sha
     sources = [source]
     roles = set()
@@ -586,14 +587,14 @@ def create_packet(input_path, segment_id, output_path, *, draft_mode=False, evid
         'schema_version': SCHEMA, 'adapter_version': ADAPTER_VERSION,
         'provider': PROVIDER, 'source_kind': PROVIDER,
         'input_mode': 'FIGHT_TRANSCRIPTION' if draft_mode else 'FIGHT_JSON',
-        'validation_profile': PROFILE, 'semantic_status': 'needs_review', 'semantic_review': 'NOT_RUN',
+        'validation_profile': profile, 'semantic_status': 'needs_review', 'semantic_review': 'NOT_RUN',
         'structural_status': 'NOT_CLAIMED' if draft_mode else 'pass',
         'mapped_structural_status': 'pass', 'upstream_writes': False,
         'unit': unit,
         'lineage': {'source_kind': PROVIDER, 'battle_id': 'UNKNOWN', 'battle_title': project['title'], 'unit_id': segment_id, 'source_revision': 'sha256:' + source['sha256'], 'unit_revision': 'sha256:' + selected_sha},
         'budget': budget, 'master': execution_master(selection), 'sources': sources,
         'source_snapshot': copy.deepcopy(project), 'selection': selection,
-        'source_selection': {'profile': PROFILE, 'segment_id': segment_id, 'selected_sha256': selected_sha, 'identity': 'FIGHT_CANONICAL_V1'},
+        'source_selection': {'profile': profile, 'segment_id': segment_id, 'selected_sha256': selected_sha, 'identity': 'FIGHT_CANONICAL_V1'},
         'asset_catalog': asset_catalog(selection), 'review': copy.deepcopy(project.get('review')),
         'evidence_snapshot': evidence_snapshot,
         'transition_context': selection['transition_context'],

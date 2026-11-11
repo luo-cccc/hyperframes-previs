@@ -1,1 +1,1 @@
-export const ADAPTER_VERSION = '0.6.1';
+export const ADAPTER_VERSION = '0.7.0';

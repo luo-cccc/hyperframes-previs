@@ -83,7 +83,7 @@ export function sampleClocks(scene,receipt,time_s){
   let source=unknown('No explicit external material clock mapping.'),timeline=unknown('No explicit assembled timeline mapping; this tool does not assemble a film.');
   if(typeof mapSegmentTime==='function'){
     const mapped=mapSegmentTime(scene,time_s);
-    if(finite(mapped.source_time_s))source={...known(mapped.source_time_s,'PREVIS_TIME_MAPPING_V1'),input_id:mapped.input_id,formal_id:mapped.formal_id,source_version:mapped.source_version};
+    if(finite(mapped.source_time_s))source={...known(mapped.source_time_s,'PREVIS_TIME_MAPPING_V1'),input_id:mapped.input_id,unit_id:mapped.unit_id,source_version:mapped.source_version};
     if(finite(mapped.edit_time_s))timeline=known(mapped.edit_time_s,'PREVIS_TIME_MAPPING_V1');
   }
   // An optional frozen render-receipt mapping can also establish external clocks.
@@ -102,27 +102,11 @@ export function transitionScope(upstream,id){
   const state=upstream?.transitions;
   if(!id)return {status:'NOT_CHECKED',scope:'NO_EXPLICIT_TRANSITION_ID',notice:'Internal cut extraction does not establish the validity of unspecified upstream transitions.'};
   if(!state)return {status:'NOT_AVAILABLE',scope:'EXPLICIT_TRANSITION_ID',transition_id:id,notice:'No transition dependency status was supplied; extraction is technical evidence only.'};
-  const records=Array.isArray(state.connections)?state.connections:Array.isArray(state.items)?state.items:Array.isArray(state.transitions)?state.transitions:[];
-  const selected=records.find(item=>(item.transition_id||item.id)===id);
-  const scopedRecords=context=>{
-    if(!context)return [];
-    const result=[];
-    for(const collection of ['plans','reviews'])for(const [index,record] of (context[collection]||[]).entries())if((record.transition_id||record.id)===id){
-      const dependencies=(context.endpoint_dependencies||[]).filter(item=>item.collection===collection&&item.record_index===index).map(item=>item.endpoints);
-      result.push({collection,record,dependencies});
-    }
-    return result;
-  };
-  const expected=scopedRecords(upstream.packet?.transition_context),current=scopedRecords(state.context);
-  if(expected.length||current.length){
-    const unchanged=jsonText(expected)===jsonText(current);
-    return {status:unchanged?'CURRENT':'STALE_SOURCE',scope:'SELECTED_TRANSITION_RECORDS_AND_ENDPOINTS',transition_id:id,expected_sha256:digest(jsonText(expected)),current_sha256:digest(jsonText(current))};
-  }
-  const staleIds=state.stale_ids||state.stale_transition_ids;
-  const relevantStale=selected?.status==='STALE'||(Array.isArray(staleIds)&&staleIds.includes(id));
-  const scopedCurrent=selected&&['CURRENT','PASS','VALID'].includes(selected.status);
-  const stale=relevantStale||(state.status==='STALE'&&!scopedCurrent&&(!Array.isArray(staleIds)||staleIds.includes(id)));
-  return {status:stale?'STALE_SOURCE':scopedCurrent?'CURRENT':'NOT_DECLARED',scope:stale&&!selected?'AGGREGATE_STALE_DEPENDENCIES_NO_PER_ID_PROOF':'EXPLICIT_TRANSITION_ID',transition_id:id,...(selected?{dependency:selected}:{}),...(!selected?{notice:'No per-ID dependency record could be proven; an aggregate stale status is conservatively blocking for an explicit transition.'}:{})};
+  const records=Array.isArray(state.connections)?state.connections:[];
+  const matches=records.filter(item=>(item.transition_id||item.id)===id);
+  if(matches.length!==1)return {status:'NOT_DECLARED',scope:'EXPLICIT_TRANSITION_ID',transition_id:id,notice:matches.length?'More than one connection claims this transition ID; its source dependency is ambiguous.':'No current per-ID connection record is declared; extraction does not establish transition validity.'};
+  const selected=matches[0],stale=['STALE','STALE_SOURCE'].includes(selected.status);
+  return {status:stale?'STALE_SOURCE':selected.status==='CURRENT'?'CURRENT':'NOT_DECLARED',scope:'EXPLICIT_TRANSITION_ID',transition_id:id,dependency:selected};
 }
 
 /** Stable consumer entry point; late import avoids a static utility/extractor cycle. */
